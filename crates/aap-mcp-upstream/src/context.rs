@@ -73,7 +73,83 @@ pub struct Outgoing {
     pub body: Vec<u8>,
 }
 
+/// One owned target and private cancellation notification. Creating this stops
+/// local response commitment; the engine must not send it for undispatched work.
+pub struct CancellationRequest {
+    pub operation: String,
+    pub outgoing: Outgoing,
+}
+
 impl Context {
+    /// Apply local cancellation without reserving remote control capacity.
+    /// Unknown/completed/initialization IDs require no external work.
+    pub fn cancel_request(
+        &mut self,
+        request: Request,
+        now: Instant,
+    ) -> Result<Option<CancellationRequest>> {
+        if request.method() != Method::Cancel
+            || !Arc::ptr_eq(&request.binding, &self.profile.binding)
+        {
+            return Err(ErrorCode::RequestInvalid.into());
+        }
+        self.expire(now);
+        let serial = self
+            .pending
+            .iter()
+            .find(|(_, pending)| {
+                pending.id.is_some()
+                    && pending.id.as_ref() == request.cancellation_id()
+                    && pending.method != Method::Initialize
+            })
+            .map(|(serial, _)| *serial);
+        match serial {
+            Some(serial) => self.cancel_serial(serial),
+            None => Ok(None),
+        }
+    }
+
+    /// Local operation cancellation also aborts a handshake without sending
+    /// a prohibited MCP initialization cancellation notification.
+    pub fn cancel_operation(
+        &mut self,
+        operation: &str,
+        now: Instant,
+    ) -> Result<Option<CancellationRequest>> {
+        self.expire(now);
+        let Some((serial, pending)) = self
+            .pending
+            .iter()
+            .find(|(_, pending)| pending.operation == operation)
+        else {
+            return Ok(None);
+        };
+        if matches!(pending.method, Method::Initialize | Method::Initialized) {
+            self.invalidate();
+            return Ok(None);
+        }
+        self.cancel_serial(*serial)
+    }
+
+    fn cancel_serial(&mut self, serial: u64) -> Result<Option<CancellationRequest>> {
+        let pending = self
+            .pending
+            .get(&serial)
+            .ok_or(ErrorCode::RequestConflict)?;
+        if pending.id.is_none() || pending.cancelled.swap(true, Ordering::AcqRel) {
+            return Ok(None);
+        }
+        Ok(Some(CancellationRequest {
+            operation: pending.operation.clone(),
+            outgoing: Outgoing {
+                headers: outgoing_headers(self.native.as_ref(), true),
+                body: serde_json::to_vec(&serde_json::json!({"jsonrpc":"2.0",
+                    "method":"notifications/cancelled","params":{"requestId":serial}}))
+                .map_err(|_| ErrorCode::InternalError)?,
+            },
+        }))
+    }
+
     pub fn new(profile: Arc<Profile>, now: Instant, expires: Instant) -> Result<Self> {
         if expires <= now {
             return Err(ErrorCode::SessionInvalid.into());

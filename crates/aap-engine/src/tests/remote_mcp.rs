@@ -4,6 +4,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+mod cancellation;
 mod controls;
 
 fn tools() -> Vec<Tool> {

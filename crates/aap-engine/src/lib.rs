@@ -348,7 +348,7 @@ impl AgentService for Session {
                 return issuance.status();
             }
             let operation = self.operation(&request_id)?;
-            operation.cancel();
+            self.cancel_remote_operation(&operation).await;
             operation.status()
         })
     }

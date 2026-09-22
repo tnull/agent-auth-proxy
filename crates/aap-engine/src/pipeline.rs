@@ -450,16 +450,15 @@ pub(super) struct Guard {
 impl Guard {
     /// Internal protocol work receives the same tracking budgets and an
     /// independent observation flow; no child inherits dispatch authority.
-    pub fn child(&self, request: ExecuteRequest) -> Result<Self> {
-        self.session.check()?;
+    pub fn child(session: &Session, parent: &Operation, request: ExecuteRequest) -> Result<Self> {
+        session.check()?;
         let flow = Flow::new(
-            self.session.core.host.configuration.recorder.clone(),
+            session.core.host.configuration.recorder.clone(),
             FlowContext {
-                session_id: self.session.id().into(),
+                session_id: session.id().into(),
                 request_id: Some(request.request_id.clone()),
-                parent_request_id: Some(self.operation.request.request_id.clone()),
-                policy_version: self
-                    .session
+                parent_request_id: Some(parent.request.request_id.clone()),
+                policy_version: session
                     .core
                     .host
                     .configuration
@@ -467,14 +466,14 @@ impl Guard {
                     .configuration_revision,
                 protocol: Protocol::Http1,
             },
-            self.session.core.options.require_observation,
+            session.core.options.require_observation,
         )?;
-        let (operation, existing) = self.session.track_operation(request)?;
+        let (operation, existing) = session.track_operation(request)?;
         if existing {
             return Err(ErrorCode::RequestConflict.into());
         }
         let mut child = Self {
-            session: self.session.clone(),
+            session: session.clone(),
             operation,
             flow,
             active: None,

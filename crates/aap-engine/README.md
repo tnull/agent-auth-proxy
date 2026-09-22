@@ -72,10 +72,21 @@ approval: an approval-required reply is skipped with a safe denial event,
 without another human wait or secret read. Cancellation interrupts admission
 as well as transport. The engine does not start a second client or retry loop.
 
+Local `request.cancel` now also prepares a one-shot mapped MCP cancellation
+child for dispatched tool work. Admitted `notifications/cancelled` messages
+use the same local-first path. Unknown/completed MCP IDs need no store access;
+pending work stops without a notification. The local operation is cancelled
+before any child admission or I/O, and status remains available while a bounded
+cleanup attempt runs. Child permission failure does not undo local cancellation.
+Initialization is never sent an MCP cancellation notification: local cancellation
+invalidates its context immediately, including a response not yet consumed.
+New MCP notification submissions still share normal input/tracking admission;
+the existing-ID `request.cancel` endpoint allocates no new parent operation.
+
 This is not the complete remote gateway. Endpoint DELETE still fails explicitly.
-Complete cancellation-child semantics, protocol-specific observation metadata,
-multi-account and overload coverage, and actual daemon/CONNECT remote-MCP fixtures remain pending. The
-component and first HTTPS tests must not be described as completing W7.
+Protocol-specific observation metadata, multi-account and overload coverage,
+and actual daemon/CONNECT remote-MCP fixtures remain pending. These engine
+tests must not be described as completing W7.
 
 ## Password-manager sessions
 

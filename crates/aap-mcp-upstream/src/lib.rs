@@ -10,8 +10,8 @@ mod response;
 mod sse;
 mod wire;
 pub use context::{
-    Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse, State,
-    validate_control_ack,
+    CancellationRequest, Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse,
+    State, validate_control_ack,
 };
 pub use sse::SseDecoder;
 

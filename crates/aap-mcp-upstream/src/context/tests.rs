@@ -118,6 +118,93 @@ fn ready(profile: &Arc<Profile>, session: Option<&str>, now: Instant) -> Context
 }
 
 #[test]
+fn local_cancellation_is_one_shot_without_control_mapping_capacity() {
+    let now = Instant::now();
+    let profile = profile();
+    let mut context = ready(&profile, Some("private-native"), now);
+    let operation = aap_types::ids::random_id(16).unwrap();
+    let exchange = context
+        .begin(call(&profile, "owned"), &operation, now)
+        .unwrap()
+        .unwrap();
+    let outgoing: Value =
+        serde_json::from_slice(&context.outgoing(&exchange, now).unwrap().body).unwrap();
+    let _ping_one = begin(
+        &mut context,
+        request(&profile, Some(json!(1)), "ping", json!({})),
+        now,
+    );
+    let _ping_two = begin(
+        &mut context,
+        request(&profile, Some(json!(2)), "ping", json!({})),
+        now,
+    );
+    context.next = 4097;
+    let cancel = request(
+        &profile,
+        None,
+        "notifications/cancelled",
+        json!({"requestId":"owned","reason":"untrusted"}),
+    );
+    let cancelled = context.cancel_request(cancel, now).unwrap().unwrap();
+    assert_eq!(cancelled.operation, operation);
+    assert_eq!(
+        cancelled.outgoing.headers["mcp-session-id"],
+        "private-native"
+    );
+    let message: Value = serde_json::from_slice(&cancelled.outgoing.body).unwrap();
+    assert_eq!(message["params"], json!({"requestId":outgoing["id"]}));
+    assert!(context.outgoing(&exchange, now).is_err());
+    assert!(context.cancel_operation(&operation, now).unwrap().is_none());
+    context.abandon(exchange);
+    assert!(context.cancel_operation(&operation, now).unwrap().is_none());
+}
+
+#[test]
+fn only_local_operation_cancellation_aborts_initialization() {
+    let now = Instant::now();
+    let other = profile();
+    let profile = profile();
+    let mut context = Context::new(profile.clone(), now, now + Duration::from_secs(60)).unwrap();
+    let operation = aap_types::ids::random_id(16).unwrap();
+    let exchange = context
+        .begin(init(&profile), &operation, now)
+        .unwrap()
+        .unwrap();
+    assert!(
+        context
+            .cancel_request(
+                request(
+                    &other,
+                    None,
+                    "notifications/cancelled",
+                    json!({"requestId":"init"})
+                ),
+                now
+            )
+            .is_err()
+    );
+    assert!(
+        context
+            .cancel_request(
+                request(
+                    &profile,
+                    None,
+                    "notifications/cancelled",
+                    json!({"requestId":"init"})
+                ),
+                now
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(context.outgoing(&exchange, now).is_ok());
+    assert!(context.cancel_operation(&operation, now).unwrap().is_none());
+    assert_eq!(context.state(now), State::Invalid);
+    assert!(context.outgoing(&exchange, now).is_err());
+}
+
+#[test]
 fn handshake_commits_private_headers_only_after_complete_validated_results() {
     let now = Instant::now();
     let profile = profile();

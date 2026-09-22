@@ -9,6 +9,7 @@ use aap_transport::{Endpoint, Limits};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
+mod cancellation;
 mod control;
 
 #[derive(Default)]
@@ -179,7 +180,7 @@ impl Session {
         reference: ItemRef,
         store: Arc<dyn SecretStore>,
         reservation: Reservation,
-    ) -> Result<Option<Exchange>> {
+    ) -> Result<Exchange> {
         let resource = input.resource.as_str();
         let mut vault = self
             .core
@@ -200,9 +201,6 @@ impl Session {
         let binding = if let Some(binding) = current.filter(|binding| binding.check().is_ok()) {
             binding
         } else {
-            if message.method() == Method::Cancel {
-                return Ok(None);
-            }
             if message.method() != Method::Initialize {
                 return Err(ErrorCode::RequestConflict.into());
             }
@@ -248,14 +246,15 @@ impl Session {
             .state
             .lock()
             .map_err(|_| ErrorCode::InternalError)?
-            .begin(message, &input.request_id, Instant::now().into_std())?;
-        Ok(exchange.map(|exchange| Exchange {
+            .begin(message, &input.request_id, Instant::now().into_std())?
+            .ok_or(ErrorCode::RequestConflict)?;
+        Ok(Exchange {
             binding,
             exchange: Some(exchange),
             completion: None,
             _request: reservation,
             response: None,
-        }))
+        })
     }
 
     pub(super) async fn dispatch_remote(
@@ -311,10 +310,7 @@ impl Session {
             .get(&profile.id)
             .ok_or(ErrorCode::PolicyDenied)?;
         let message = compiled.request(&body)?;
-        let control = matches!(
-            message.method(),
-            Method::Ping | Method::Initialized | Method::Cancel
-        );
+        let control = matches!(message.method(), Method::Ping | Method::Initialized);
         let item = config
             .catalog
             .items
@@ -335,6 +331,11 @@ impl Session {
                 headers: super::observation::request_headers(&input.headers),
             },
         )?;
+        if message.method() == Method::Cancel {
+            return self
+                .cancel_remote_message(guard, profile, target, message, deadline)
+                .await;
+        }
         let store = config
             .stores
             .get(&item.credential.store)
@@ -348,34 +349,15 @@ impl Session {
                 return Err(error.into());
             }
         };
-        let Some(exchange) = self.prepare_remote(
+        let exchange = self.prepare_remote(
             &input,
             message,
             &metadata,
             reference,
             store,
             request_reservation,
-        )?
-        else {
-            guard.record(
-                Direction::Inbound,
-                Data::ResponseStart {
-                    status: 202,
-                    headers: vec![],
-                },
-            )?;
-            guard.complete_local(202)?;
-            return empty_response(202);
-        };
+        )?;
         let binding = exchange.binding.clone();
-        if let Some(target) = exchange
-            .exchange
-            .as_ref()
-            .and_then(|ticket| ticket.cancellation_target())
-            && let Ok(operation) = self.operation(target)
-        {
-            operation.cancel();
-        }
         guard.remote = Some(exchange);
         let deadline = deadline.min(binding.deadline()?);
         let exchange = async {

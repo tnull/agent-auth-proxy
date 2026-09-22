@@ -717,3 +717,42 @@ proof-of-concept gates recorded above.
 All 174 unit tests, twelve daemon process tests, and the compile-fail doctest
 pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
 stable formatting, warning-free Clippy, and warning-free documentation pass.
+
+## Local-first remote MCP cancellation
+
+Admitted MCP cancellation notifications and the existing-ID local cancel API
+now stop owned local work before store access, human interaction, control-slot
+admission, or remote I/O. The protocol component resolves a live mapping and
+marks it cancelled without allocating another protocol mapping. Unknown and
+completed MCP IDs are ignored. MCP initialization cancellation is ignored;
+explicit local operation cancellation invalidates a handshake immediately,
+including an outstanding response that has not yet been dropped or consumed.
+
+For dispatched work only, a one-shot cancellation child uses the same admitted
+control path as server ping replies. It has independent policy, custody, DNS,
+observation, capacity, and acknowledgment checks. Approval-required children
+are skipped without another human wait. Failure or refusal cannot undo local
+cancellation, claim remote rollback, or replay the work. Child observation
+correlates to the cancelled operation and withholds both native identifiers and
+the agent-supplied cancellation reason. No detached task retains a password to
+finish cleanup after revocation.
+
+Three engine tests were observed failing before implementation: missing child
+correlation and store-dependent cancellation of ignored or approval-pending
+work. They now pass. Additional conformance covers both cancellation interfaces
+under approval, exhausted control slots, a locked store, and remote refusal;
+initialization retirement before response drop; and two pure ownership tests
+for one-shot mapping, full control capacity, and initialization semantics.
+The retained-response test uses smaller explicit response ceilings so both
+old and new reservations fit the unchanged aggregate memory budget.
+
+MCP notifications remain subject to ordinary request framing, resource, and
+operation-tracking admission. Existing-ID local status/cancel remains the
+non-allocating-parent control interface. Full aggregate-buffer/capacity stress,
+protocol-specific observation, DELETE, multiple-account evidence, and actual
+daemon/CONNECT remote-MCP fixtures remain acceptance work. The broader TCP,
+confinement, reuse, maintenance, and native-store gates remain open.
+
+All 181 unit tests, twelve daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
+stable formatting, warning-free Clippy, and warning-free documentation pass.

@@ -12,7 +12,7 @@ credential/policy versions, approval, quotas, observation, and cancellation.
 Validated messages do not authorize a connection or credential use.
 
 The engine now has real HTTPS initialization/list/call and admitted server-ping
-child tests; cancellation/cleanup integration and actual daemon remote-MCP
+child/cancellation tests; DELETE integration and actual daemon remote-MCP
 fixtures remain pending. `validate_control_ack` checks a control POST's status
 and headers; the host must also require an empty, trailer-free body through EOF.
 Do not advertise a complete remote gateway from these component tests alone.
@@ -83,6 +83,13 @@ handshake invalidates the context. Known cancellation maps only owned live work
 and returns its local operation ID so the engine can cancel the actual task.
 Unknown/completed/initialization MCP cancellation IDs are ignored. Local status
 and remote notification delivery remain engine responsibilities.
+
+`cancel_request` applies an owned MCP notification locally without allocating
+another control mapping; `cancel_operation` selects the trusted local operation
+and also invalidates an unfinished handshake. Both return at most one private
+notification preparation. The host must first stop its task and send nothing
+for undispatched work; store/approval/capacity failure cannot delay local
+cancellation. Neither helper proves remote cancellation or permits replay.
 
 `invalidate` makes pending decoders/completions unusable. `close(now)` first
 checks expiry/failure and removes local authority, optionally returning private
