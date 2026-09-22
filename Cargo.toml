@@ -8,6 +8,10 @@ members = [
     "crates/aap-store-sqlite",
     "crates/aap-transport",
     "crates/aap-test-support",
+    "crates/aap-providers",
+    "crates/aap-auth",
+    "crates/aap-observe",
+    "crates/aap-engine",
 ]
 
 [workspace.package]
@@ -24,6 +28,10 @@ aap-config = { path = "crates/aap-config" }
 aap-store-sqlite = { path = "crates/aap-store-sqlite" }
 aap-transport = { path = "crates/aap-transport" }
 aap-test-support = { path = "crates/aap-test-support" }
+aap-providers = { path = "crates/aap-providers" }
+aap-auth = { path = "crates/aap-auth" }
+aap-observe = { path = "crates/aap-observe" }
+aap-engine = { path = "crates/aap-engine" }
 base64 = "0.22"
 getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }

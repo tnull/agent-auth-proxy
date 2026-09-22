@@ -3,12 +3,59 @@
 version = 4
 
 [[package]]
+name = "aap-auth"
+version = "0.1.0"
+dependencies = [
+ "aap-secrets",
+ "aap-types",
+ "base64",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "aap-config"
 version = "0.1.0"
 dependencies = [
  "aap-types",
  "rustix",
  "serde",
+]
+
+[[package]]
+name = "aap-engine"
+version = "0.1.0"
+dependencies = [
+ "aap-auth",
+ "aap-config",
+ "aap-observe",
+ "aap-policy",
+ "aap-providers",
+ "aap-secrets",
+ "aap-store-sqlite",
+ "aap-test-support",
+ "aap-transport",
+ "aap-types",
+ "base64",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "aap-observe"
+version = "0.1.0"
+dependencies = [
+ "aap-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -20,6 +67,15 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "aap-providers"
+version = "0.1.0"
+dependencies = [
+ "aap-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

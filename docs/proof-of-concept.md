@@ -153,3 +153,37 @@ These are private low-level upstream responses, not yet an agent-safe broker.
 Final credential injection, response sanitization, interception/CONNECT, and
 the daemon remain separate uncompleted work. No W3 completion is claimed by
 transport tests alone.
+
+## First provider library integration
+
+`aap-engine` now implements a privileged broker and session-bound API-key
+operations using the real SQLCipher backend and verified TLS transport.
+`aap-providers` supplies a strict text-only request inspector;
+`aap-auth` supplies private key preparation and incremental response sanitization;
+`aap-observe` supplies bounded local recording with acknowledgment/resume gaps.
+No new external dependencies were added for these four crates.
+
+Nine engine tests demonstrate both provider request profiles, private final
+headers, split-key echo suppression, cookie stripping, safe observed content,
+session-separated request status, duplicate/conflicting operation IDs, missing
+approval, asynchronous approval/revocation, rotation during approval, pending
+payload limits, oversized-chunk-safe outbound redaction, required recording
+failure, ambiguous disconnects, abandoned responses, and cancellation at EOF.
+Store resolution is counted: it stays at zero during pending approval and when
+required recording is already unavailable. These are synthetic local fixtures,
+not live-provider or complete daemon conformance tests.
+
+Initial broker/auth/provider/recording tests failed against their stubs before
+implementation. Additional tests caught, before correction, malformed provider
+version overrides, large-body redaction rejection, missing pending-byte limits,
+new-cookie body echoes, eviction of required records by best-effort traffic,
+secret resolution while required recording was offline, and a cancellation/EOF
+completion race. No assertion was weakened to obtain a pass.
+
+All 61 unit tests and the secret-formatting compile-fail doctest pass on Rust
+1.95.0 and 1.88.0. Workspace formatting, compilation, and Clippy pass on 1.95.0.
+The complete W1/W3/W7 gates remain unchecked: native daemon/client ingress,
+configuration lifecycle, exhaustive quota/race checks, complete observation
+views/export, and the website/MCP/TCP/confinement paths are still pending.
+Known-value suppression remains defense in depth against ordinary echoes; it
+does not defeat covert encoding by an intentionally malicious upstream.

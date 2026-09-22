@@ -9,8 +9,15 @@ See [the design](plan/README.md) and the
 
 Libraries are separated by responsibility and can be reused by trusted hosts.
 The agent-facing client must never acquire a dependency on credential custody.
-macOS uses Keychain directly through `security-framework`; other platforms use
-encrypted SQLite. The store interface remains backend-neutral.
+The planned daemon defaults are native Keychain on macOS and encrypted SQLite
+elsewhere. SQLCipher custody is implemented; the macOS adapter is still pending.
+The store interface remains backend-neutral.
+
+The first library-level provider slice now runs from session admission through
+SQLCipher key retrieval and verified HTTPS to sanitized streamed output. Exercise
+it without personal credentials or live provider requests with
+`cargo test -p aap-engine`. The daemon, website login flow, MCP, and confinement
+demonstration are not yet implemented.
 
 ## Development
 

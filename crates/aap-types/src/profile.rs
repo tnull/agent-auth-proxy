@@ -49,3 +49,7 @@ pub enum ProviderKind {
     AnthropicMessages,
     Generic,
 }
+/// Trusted request inspection, independent of sockets and credential custody.
+pub trait RequestInspector: Send + Sync {
+    fn inspect(&self, provider: ProviderKind, body: &[u8]) -> crate::Result<()>;
+}
