@@ -9,7 +9,10 @@ mod request;
 mod response;
 mod sse;
 mod wire;
-pub use context::{Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse, State};
+pub use context::{
+    Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse, State,
+    validate_control_ack,
+};
 pub use sse::SseDecoder;
 
 /// Compiled operator policy. This does not grant a caller permission to use it.

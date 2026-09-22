@@ -9,6 +9,8 @@ use aap_transport::{Endpoint, Limits};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
+mod control;
+
 #[derive(Default)]
 pub(super) struct Vault {
     contexts: Vec<(String, Arc<Binding>)>,
@@ -269,8 +271,8 @@ impl Session {
         if input.auth_context.is_some() {
             return Err(ErrorCode::PolicyDenied.into());
         }
-        // DELETE cleanup and server-initiated child dispatch are separate
-        // integration steps; no generic pass-through is used in their absence.
+        // DELETE cleanup remains a separate integration step; no generic
+        // pass-through is used in its absence.
         if input.method != "POST" {
             return Err(ErrorCode::AuthProfileUnsupported.into());
         }
@@ -556,9 +558,22 @@ impl Session {
                     return Err(ErrorCode::InspectionUnavailable.into());
                 };
                 for chunk in data.chunks(aap_types::mcp::MAX_REQUEST) {
-                    if !decoder.push(chunk)?.is_empty() {
-                        binding.invalidate();
-                        return Err(ErrorCode::AuthProfileUnsupported.into());
+                    for ping in decoder.push(chunk)? {
+                        let outgoing = {
+                            let remote = guard.remote.as_ref().ok_or(ErrorCode::InternalError)?;
+                            binding
+                                .state
+                                .lock()
+                                .map_err(|_| ErrorCode::InternalError)?
+                                .ping_reply(
+                                    remote.exchange.as_ref().ok_or(ErrorCode::RequestConflict)?,
+                                    &decoder,
+                                    &ping,
+                                    Instant::now().into_std(),
+                                )?
+                        };
+                        self.reply_remote_ping(guard, profile, target, outgoing, deadline)
+                            .await?;
                     }
                 }
             }

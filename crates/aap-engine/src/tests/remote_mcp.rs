@@ -4,6 +4,8 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+mod controls;
+
 fn tools() -> Vec<Tool> {
     vec![Tool {
         name: "echo".into(),

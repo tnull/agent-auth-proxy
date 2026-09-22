@@ -32,83 +32,22 @@ impl Session {
             },
             self.core.options.require_observation,
         )?;
-        let operation = {
-            let mut operations = self
-                .core
-                .operations
-                .lock()
-                .map_err(|_| ErrorCode::InternalError)?;
-            if operations.issuances.contains_key(&request.request_id) {
-                return Err(ErrorCode::RequestConflict.into());
-            }
-            if let Some(existing) = operations.items.get(&request.request_id) {
-                if *existing.request != request {
-                    return Err(ErrorCode::RequestConflict.into());
-                }
-                let status = existing.status()?;
-                return http::Response::builder()
-                    .status(if terminal(status.state) { 200 } else { 202 })
-                    .header("content-type", "application/json")
-                    .header("x-aap-operation-state", "existing")
-                    .body(
-                        Full::new(Bytes::from(
-                            serde_json::to_vec(&status).map_err(|_| ErrorCode::InternalError)?,
-                        ))
-                        .map_err(|never| match never {})
-                        .boxed_unsync(),
-                    )
-                    .map_err(|_| ErrorCode::InternalError.into());
-            }
-            if request.body_base64.len() > 1_398_104
-                || request.headers.len() > 64
-                || request.target.len() > 16_384
-                || request.resource.len() > 64
-                || request.method.len() > 16
-                || request
-                    .auth_context
-                    .as_ref()
-                    .is_some_and(|context| context.len() > 64)
-                || request
-                    .headers
-                    .iter()
-                    .map(|(name, value)| name.len() + value.len())
-                    .sum::<usize>()
-                    > 65_536
-            {
-                return Err(ErrorCode::LimitExceeded.into());
-            }
-            let bytes = serde_json::to_vec(&request)
-                .map_err(|_| ErrorCode::RequestInvalid)?
-                .len()
-                + 512;
-            if operations.items.len() + operations.issuances.len() >= 4096
-                || operations.bytes + bytes > 8 * 1024 * 1024
-            {
-                return Err(ErrorCode::LimitExceeded.into());
-            }
-            self.core
-                .host
-                .operation_bytes
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                    used.checked_add(bytes)
-                        .filter(|next| *next <= 64 * 1024 * 1024)
-                })
-                .map_err(|_| ErrorCode::LimitExceeded)?;
-            let operation = Arc::new(Operation {
-                state: Mutex::new(OperationStatus {
-                    request_id: request.request_id.clone(),
-                    state: OperationState::Received,
-                    status: None,
-                }),
-                request: Arc::new(request),
-                cancelled: Cancellation::default(),
-            });
-            operations.bytes += bytes;
-            operations
-                .items
-                .insert(operation.request.request_id.clone(), operation.clone());
-            operation
-        };
+        let (operation, existing) = self.track_operation(request)?;
+        if existing {
+            let status = operation.status()?;
+            return http::Response::builder()
+                .status(if terminal(status.state) { 200 } else { 202 })
+                .header("content-type", "application/json")
+                .header("x-aap-operation-state", "existing")
+                .body(
+                    Full::new(Bytes::from(
+                        serde_json::to_vec(&status).map_err(|_| ErrorCode::InternalError)?,
+                    ))
+                    .map_err(|never| match never {})
+                    .boxed_unsync(),
+                )
+                .map_err(|_| ErrorCode::InternalError.into());
+        }
         let mut guard = Guard {
             session: self.clone(),
             operation: operation.clone(),
@@ -199,6 +138,72 @@ impl Session {
                 Err(error.for_request(&operation.request.request_id))
             }
         }
+    }
+
+    fn track_operation(&self, request: ExecuteRequest) -> Result<(Arc<Operation>, bool)> {
+        let mut operations = self
+            .core
+            .operations
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?;
+        if operations.issuances.contains_key(&request.request_id) {
+            return Err(ErrorCode::RequestConflict.into());
+        }
+        if let Some(existing) = operations.items.get(&request.request_id) {
+            if *existing.request != request {
+                return Err(ErrorCode::RequestConflict.into());
+            }
+            return Ok((existing.clone(), true));
+        }
+        if request.body_base64.len() > 1_398_104
+            || request.headers.len() > 64
+            || request.target.len() > 16_384
+            || request.resource.len() > 64
+            || request.method.len() > 16
+            || request
+                .auth_context
+                .as_ref()
+                .is_some_and(|context| context.len() > 64)
+            || request
+                .headers
+                .iter()
+                .map(|(name, value)| name.len() + value.len())
+                .sum::<usize>()
+                > 65_536
+        {
+            return Err(ErrorCode::LimitExceeded.into());
+        }
+        let bytes = serde_json::to_vec(&request)
+            .map_err(|_| ErrorCode::RequestInvalid)?
+            .len()
+            + 512;
+        if operations.items.len() + operations.issuances.len() >= 4096
+            || operations.bytes + bytes > 8 * 1024 * 1024
+        {
+            return Err(ErrorCode::LimitExceeded.into());
+        }
+        self.core
+            .host
+            .operation_bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(bytes)
+                    .filter(|next| *next <= 64 * 1024 * 1024)
+            })
+            .map_err(|_| ErrorCode::LimitExceeded)?;
+        let operation = Arc::new(Operation {
+            state: Mutex::new(OperationStatus {
+                request_id: request.request_id.clone(),
+                state: OperationState::Received,
+                status: None,
+            }),
+            request: Arc::new(request),
+            cancelled: Cancellation::default(),
+        });
+        operations.bytes += bytes;
+        operations
+            .items
+            .insert(operation.request.request_id.clone(), operation.clone());
+        Ok((operation, false))
     }
 
     async fn dispatch(&self, guard: &mut Guard, deadline: Instant) -> Result<Response> {
@@ -443,6 +448,49 @@ pub(super) struct Guard {
     pub response_recorded: bool,
 }
 impl Guard {
+    /// Internal protocol work receives the same tracking budgets and an
+    /// independent observation flow; no child inherits dispatch authority.
+    pub fn child(&self, request: ExecuteRequest) -> Result<Self> {
+        self.session.check()?;
+        let flow = Flow::new(
+            self.session.core.host.configuration.recorder.clone(),
+            FlowContext {
+                session_id: self.session.id().into(),
+                request_id: Some(request.request_id.clone()),
+                parent_request_id: Some(self.operation.request.request_id.clone()),
+                policy_version: self
+                    .session
+                    .core
+                    .host
+                    .configuration
+                    .catalog
+                    .configuration_revision,
+                protocol: Protocol::Http1,
+            },
+            self.session.core.options.require_observation,
+        )?;
+        let (operation, existing) = self.session.track_operation(request)?;
+        if existing {
+            return Err(ErrorCode::RequestConflict.into());
+        }
+        let mut child = Self {
+            session: self.session.clone(),
+            operation,
+            flow,
+            active: None,
+            finished: false,
+            dispatched: false,
+            observed: Mutex::new(std::array::from_fn(|_| StreamState::default())),
+            website: None,
+            remote: None,
+            response_recorded: false,
+        };
+        if let Err(error) = child.record_both(Direction::Outbound, Data::FlowOpen {}) {
+            child.fail(error.code);
+            return Err(error);
+        }
+        Ok(child)
+    }
     pub fn complete_local(&mut self, status: u16) -> Result<()> {
         self.session.check()?;
         if self.operation.cancelled.is_cancelled() {
@@ -454,7 +502,7 @@ impl Guard {
         self.finished = true;
         Ok(())
     }
-    fn complete(&mut self) -> Result<()> {
+    pub fn complete(&mut self) -> Result<()> {
         {
             let mut state = self
                 .operation
@@ -502,7 +550,7 @@ impl Guard {
         self.finished = true;
         Ok(())
     }
-    fn fail(&mut self, reason: ErrorCode) {
+    pub fn fail(&mut self, reason: ErrorCode) {
         if self.finished {
             return;
         }

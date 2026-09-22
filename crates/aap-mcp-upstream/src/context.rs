@@ -17,6 +17,14 @@ mod decoder;
 mod headers;
 pub use decoder::{Completion, ResponseDecoder, SafeResponse};
 
+/// Validate headers/status for a POSTed control response or notification.
+/// The host must still consume an empty body through EOF, reject trailers,
+/// and enforce current authority; this function does not admit a dispatch.
+pub fn validate_control_ack(status: StatusCode, headers: &HeaderMap) -> Result<()> {
+    headers::admit(Method::Cancel, status, headers, None, &Redactor::new(&[])?)?;
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     New,

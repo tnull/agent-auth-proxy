@@ -59,10 +59,22 @@ byte ceilings may admit fewer simultaneous operations than the slot ceilings.
 These counters need further adversarial allocation/concurrency evidence before
 the complete remote MCP gate can pass.
 
-This is not the complete remote gateway. Endpoint DELETE and server-initiated
-ping dispatch currently fail explicitly. Complete cancellation/control-child
-semantics, protocol-specific observation metadata, multi-account and overload
-coverage, and actual daemon/CONNECT remote-MCP fixtures remain pending. The
+Server ping replies now use separate tracked child operations with independent
+DNS, custody, control-slot, and required-observation admission. Their safe flow
+IDs correlate to the parent without retaining private server IDs in operation
+DTOs or telemetry. Initialization pings can use the provisional private native
+session. A reply must receive an empty, trailer-free HTTP 202 acknowledgment;
+unsafe or uncertain dispatched children invalidate the context.
+
+Children have a two-second attempt deadline capped by the parent lifetime and
+reserve 256 KiB of the shared protocol budget. A child cannot borrow the parent's
+approval: an approval-required reply is skipped with a safe denial event,
+without another human wait or secret read. Cancellation interrupts admission
+as well as transport. The engine does not start a second client or retry loop.
+
+This is not the complete remote gateway. Endpoint DELETE still fails explicitly.
+Complete cancellation-child semantics, protocol-specific observation metadata,
+multi-account and overload coverage, and actual daemon/CONNECT remote-MCP fixtures remain pending. The
 component and first HTTPS tests must not be described as completing W7.
 
 ## Password-manager sessions

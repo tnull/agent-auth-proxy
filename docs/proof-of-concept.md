@@ -682,3 +682,38 @@ pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
 formatting, warning-free Clippy, and warning-free public documentation pass
 on 1.95.0. These checks cover the current implementation, not the remaining
 remote-control or complete W7 acceptance requirements.
+
+## Admitted remote MCP server ping replies
+
+Server pings in bounded SSE responses now produce one-shot child POSTs through
+the existing admitted HTTPS transport. The child has its own bounded operation
+record, parent-correlated safe observation flow, control-slot reservation,
+destination/custody checks, and two-second deadline. It can carry provisional
+initialization session state privately. Its local DTO and content observation
+withhold the upstream-selected ID rather than copying potentially secret-bearing
+server text. The protocol component validates acknowledgment headers/status;
+the engine requires an empty body through EOF and rejects trailers.
+
+The child cannot reuse parent approval. Applicable item/global/session/route
+approval causes an observed skip without secret resolution or a human wait.
+Dispatched child failures invalidate context authority. Cancellation interrupts
+DNS/store admission as well as network I/O; no independent connector or detached
+cleanup loop is introduced.
+
+The three initial real-HTTPS tests failed on the missing-child boundary before
+implementation and now pass. A targeted cancellation test then demonstrated
+that a child stalled in DNS ignored its own cancellation until the attempt
+deadline; it failed before adding that cancellation watch and now passes.
+Two additional conformance tests cover bounded reserved capacity, destination
+denial, required-recorder loss, and credential rotation during child admission.
+All six tests use synthetic custody and real parent/child HTTPS exchanges.
+
+This completes the first server-ping dispatch integration, not remote MCP as a
+whole. Cancellation notifications/local cancel children, endpoint DELETE,
+protocol-level observation, multiple-account and broader capacity evidence,
+and actual daemon/CONNECT acceptance remain pending, alongside the other
+proof-of-concept gates recorded above.
+
+All 174 unit tests, twelve daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
+stable formatting, warning-free Clippy, and warning-free documentation pass.
