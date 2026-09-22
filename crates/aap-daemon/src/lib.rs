@@ -88,6 +88,30 @@ pub struct ReadEvents {
     pub cursor: Option<aap_observe::Cursor>,
     pub limit: usize,
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateObservation {
+    pub scope: aap_observe::Scope,
+    pub limits: aap_observe::SubscriptionLimits,
+    pub lifetime_seconds: u64,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationAttachment {
+    pub subscription_id: String,
+    pub observation_socket: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationReference {
+    pub subscription_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadSubscription {
+    pub cursor: Option<aap_observe::SubscriptionCursor>,
+    pub limit: usize,
+}
 
 pub struct Loaded {
     pub configuration: DaemonConfig,

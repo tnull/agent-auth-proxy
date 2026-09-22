@@ -5,7 +5,7 @@ This documents the implemented subset of the
 
 ## Envelope and identity
 
-The daemon's owner-only observation endpoint returns bounded JSON batches of
+The daemon's owner observation endpoint returns bounded JSON batches of
 `aap_observe::Record`. The outer fields are `schema_version` (1),
 `daemon_epoch`, `event_id`, `time_unix_ms`, and `event`. The event contains
 assigned session/flow/request/optional parent IDs, `policy_version`, `protocol`,
@@ -91,12 +91,49 @@ unavailable, terminal events cannot be guaranteed: consumed event IDs and the
 resume/gap mechanism expose missing coverage. An incomplete or missing ending
 must never be inferred to be success.
 
-Read/ack cursors, bounded pages, gaps, restart epochs, and retention continue
-to use the [daemon endpoint contract](daemon.md). The endpoint is currently a
-privileged owner-wide reader, not a scoped multi-tenant subscription service.
+## Scoped collectors
 
-Still pending: separately authorized/scoped consumers and their quotas;
-physical TCP/TLS connection lifecycle and tunnel/subrequest correlation;
+The operator can enroll up to sixteen private collector attachments through the
+[daemon endpoint contract](daemon.md). Each grant selects existing session IDs,
+agent/upstream views, and metadata/content classes. Enrollment is forward-only,
+with no history or implicit future sessions. Metadata includes safe targets,
+headers, aliases, sequence/lifecycle and byte counts; content additionally
+exposes redacted payload chunks. The grant is immutable for the attachment.
+
+Scoped read returns `deliveries`, not the owner's `records` array. Each delivery
+has its own `delivery_id` plus the canonical source `record`. Only selected
+events consume delivery IDs. Resume and gaps use delivery IDs, so excluding
+content or a different session is not mislabeled recording loss. Source flow
+sequences may still have gaps due to selection. Source event IDs remain shared
+across authorized readers for correlation; their aggregate numbering is not a
+traffic-anonymity guarantee.
+
+The cursor includes the subscription ID, daemon epoch, and last delivery ID.
+It is not a credential: the private attachment authenticates its scope. Foreign
+cursors, wrong epochs, and positions beyond an issued page are rejected.
+Reconnecting to the same live attachment can replay retained deliveries.
+Revocation/restart requires fresh enrollment; it cannot silently continue an
+old stream.
+
+One canonical stored event can have an owner claim and several collector
+claims. Acknowledging a claim does not acknowledge any other. Storage is charged
+once against global limits and an 8 MiB per-session retained-content limit;
+each collector also has explicit event/byte queue ceilings. Required recording
+atomically accepts the update in every selected queue, or fails. A required
+record remains protected until all applicable claims are acknowledged or
+closed. Operators must therefore drain the owner channel as well as collectors.
+Best-effort consumer-local overflow loses that consumer's whole update without
+discarding another queue's data; global/session exhaustion can cause broader
+eviction or loss. All loss consumes source/delivery identities and produces
+resume gaps.
+
+The daemon revokes collectors on explicit operator revocation, expiry, loss of
+an enrolled session, successful reload, or shutdown. Private sockets and peer
+UID checks still require a launcher that exposes only the intended attachment,
+not the complete runtime directory. No collector gains policy-write, session
+creation, approval, or credential-store authority.
+
+Still pending: physical TCP/TLS connection lifecycle and tunnel/subrequest correlation;
 remote MCP and TCP coverage; parsed message convenience events; and expanded
 auth state events. These limitations prevent claiming complete communication
 observation or checking off W7.

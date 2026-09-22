@@ -21,6 +21,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[path = "process/interception.rs"]
 mod interception;
+#[path = "process/observation.rs"]
+mod observation;
 
 struct Fixture {
     root: PathBuf,

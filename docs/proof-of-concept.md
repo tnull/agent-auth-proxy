@@ -489,3 +489,41 @@ reuse, and store-maintenance work is unchanged. No dependencies were added.
 All 125 unit tests, ten process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. All-target checks pass on both; formatting, warning-free
 Clippy, and warning-free public documentation pass on 1.95.0.
+
+## Scoped observation collectors
+
+The recorder now supports sixteen independently enrolled session/view/content
+subscriptions. Delivery cursors and acknowledgments are bound to one immutable
+scope and only previously issued pages. Filtered-out records do not consume
+delivery IDs. Canonical records remain shared under global limits and an 8 MiB
+per-session retained-content ceiling; owner and collector acknowledgments
+release only their own claims. Required updates are atomic across eligible
+queues, while best-effort consumer-local overflow leaves other queues intact.
+
+The real daemon exposes operator-only observation create/revoke endpoints and
+separate owner-only sockets per collector. Expiry, session revocation, valid
+reload, and shutdown revoke attachments; invalid reload leaves them intact.
+Enrollment selects existing live sessions without history or future wildcards.
+The privileged owner channel remains separate and must also be drained in
+required mode. Source event numbering remains visible to authorized collectors;
+this is content/session access control, not a traffic-anonymity guarantee.
+
+Seven library tests cover scope/filtering, independent claims, cursor misuse,
+consumer-local loss, finite subscribers/pages, shared accounting and the
+per-session ceiling. The new behaviors were observed failing before their
+respective changes. A real-process test initially failed at the missing operator
+enrollment path and now verifies two sessions, metadata/content grants, cursor
+isolation, revocation, expiry, and reload. A second process scenario confirms
+required collector overflow sends no upstream request and that explicit
+revocation permits newly authorized work afterward.
+
+An additional churn test checks the internal retention-claim and byte-accounting
+invariants across repeated recording, loss, acknowledgment, close, and re-enrollment.
+
+This advances W7 without completing its remote MCP/TCP or physical connection
+coverage. Confinement, external reuse examples, remaining store-maintenance
+evidence, and macOS custody remain outstanding. No dependency was added.
+
+All 133 unit tests, twelve process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
+warning-free Clippy, and warning-free public documentation pass on 1.95.0.

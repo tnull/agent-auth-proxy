@@ -9,6 +9,11 @@ use std::{
 
 mod flow;
 pub use flow::{Emission, Flow, FlowContext, Inspection, Protocol, Redaction};
+mod subscription;
+pub use subscription::{
+    ContentClass, Delivery, Scope, Subscription, SubscriptionBatch, SubscriptionCursor,
+    SubscriptionLimits,
+};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
@@ -97,6 +102,7 @@ pub struct Record {
     pub event: Event,
 }
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Cursor {
     pub epoch: String,
     pub after: u64,
@@ -114,245 +120,8 @@ pub struct Gap {
     pub previous_epoch: bool,
 }
 
-#[derive(Clone)]
-pub struct Recorder {
-    state: Arc<Mutex<State>>,
-}
-struct State {
-    epoch: String,
-    next: u64,
-    records: VecDeque<(Record, usize, bool)>,
-    bytes: usize,
-    max_events: usize,
-    max_bytes: usize,
-    available: bool,
-}
-impl Recorder {
-    pub fn new(epoch: String, max_events: usize, max_bytes: usize) -> Result<Self> {
-        if !aap_types::ids::valid_id(&epoch, 16)
-            || max_events == 0
-            || max_events > 65_536
-            || !(512..=64 * 1024 * 1024).contains(&max_bytes)
-        {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        Ok(Self {
-            state: Arc::new(Mutex::new(State {
-                epoch,
-                next: 1,
-                records: VecDeque::new(),
-                bytes: 0,
-                max_events,
-                max_bytes,
-                available: true,
-            })),
-        })
-    }
-    pub fn record(&self, event: Event, required: bool) -> Result<()> {
-        self.record_batch(vec![event], required)
-    }
-    /// Accept at most sixteen records / 256 KiB as one logical update.
-    /// Failed acceptance consumes IDs, but never retains a partial update.
-    pub fn record_batch(&self, events: Vec<Event>, required: bool) -> Result<()> {
-        if events.is_empty() || events.len() > 16 {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        let first = state.next;
-        state.next = first
-            .checked_add(events.len() as u64)
-            .ok_or(ErrorCode::ObservationUnavailable)?;
-        let unavailable = || {
-            if required {
-                Err(ErrorCode::ObservationUnavailable.into())
-            } else {
-                Ok(())
-            }
-        };
-        if !state.available || events.len() > state.max_events {
-            return unavailable();
-        }
-        let time_unix_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| ErrorCode::ObservationUnavailable)?
-            .as_millis()
-            .try_into()
-            .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        let mut additions = Vec::with_capacity(events.len());
-        let mut added_bytes = 0;
-        for (index, event) in events.into_iter().enumerate() {
-            let size_hint = event.session_id.len()
-                + event.request_id.as_ref().map_or(0, String::len)
-                + event.parent_request_id.as_ref().map_or(0, String::len)
-                + event.flow_id.len()
-                + event.stream_id.len()
-                + match &event.data {
-                    Data::ConnectAdmission { authority } => authority.len(),
-                    Data::ContentChunk {
-                        body_base64,
-                        media_type,
-                        encoding,
-                        ..
-                    } => {
-                        body_base64.len()
-                            + media_type.as_ref().map_or(0, String::len)
-                            + encoding.len()
-                    }
-                    Data::RequestStart {
-                        method,
-                        target,
-                        headers,
-                    } => {
-                        method.len()
-                            + target.len()
-                            + headers
-                                .iter()
-                                .map(|(name, value)| name.len() + value.len())
-                                .sum::<usize>()
-                    }
-                    Data::ResponseStart { headers, .. } => headers
-                        .iter()
-                        .map(|(name, value)| name.len() + value.len())
-                        .sum(),
-                    Data::AuthTransition { item_id, .. } => item_id.len(),
-                    _ => 0,
-                };
-            if size_hint > 128 * 1024 {
-                return unavailable();
-            }
-            let record = Record {
-                schema_version: 1,
-                daemon_epoch: state.epoch.clone(),
-                event_id: first + index as u64,
-                time_unix_ms,
-                event,
-            };
-            let bytes = serde_json::to_vec(&record)
-                .map_err(|_| ErrorCode::ObservationUnavailable)?
-                .len();
-            added_bytes += bytes;
-            if bytes > 128 * 1024 || added_bytes > 256 * 1024 || added_bytes > state.max_bytes {
-                return unavailable();
-            }
-            additions.push((record, bytes, required));
-        }
-        let mut removed_count = 0;
-        let mut removed_bytes = 0;
-        while state.records.len() - removed_count + additions.len() > state.max_events
-            || state.bytes - removed_bytes + added_bytes > state.max_bytes
-        {
-            if required {
-                return unavailable();
-            }
-            let Some((_, bytes, protected)) = state.records.get(removed_count) else {
-                return unavailable();
-            };
-            if *protected {
-                return unavailable();
-            }
-            removed_bytes += bytes;
-            removed_count += 1;
-        }
-        // Capacity is decided before mutation, including best-effort eviction.
-        state.records.drain(..removed_count);
-        state.bytes = state.bytes - removed_bytes + added_bytes;
-        state.records.extend(additions);
-        Ok(())
-    }
-    pub fn read(&self, cursor: Option<&Cursor>, limit: usize) -> Result<Batch> {
-        self.read_bounded(cursor, limit, 64 * 1024 * 1024 + 2048)
-    }
-    /// Read a count- and encoded-byte-bounded page without advancing past
-    /// retained records that do not fit. The budget includes the batch envelope.
-    pub fn read_bounded(
-        &self,
-        cursor: Option<&Cursor>,
-        limit: usize,
-        max_bytes: usize,
-    ) -> Result<Batch> {
-        if limit == 0 || limit > 1024 || !(512..=64 * 1024 * 1024 + 2048).contains(&max_bytes) {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        let previous_epoch = cursor.is_some_and(|cursor| cursor.epoch != state.epoch);
-        let after = cursor
-            .filter(|_| !previous_epoch)
-            .map_or(0, |cursor| cursor.after);
-        if after >= state.next {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        let first = state
-            .records
-            .iter()
-            .find(|(record, _, _)| record.event_id > after)
-            .map_or(state.next, |(record, _, _)| record.event_id);
-        let gap = (previous_epoch || first > after + 1).then_some(Gap {
-            first: after + 1,
-            last: first - 1,
-            previous_epoch,
-        });
-        let mut records = Vec::new();
-        let mut position = first;
-        // The fixed envelope has a canonical 22-byte epoch and bounded numeric
-        // fields. Charge commas as well as the previously serialized record.
-        let mut bytes = 512;
-        for (record, record_bytes, _) in &state.records {
-            if record.event_id < first {
-                continue;
-            }
-            if record.event_id != position || records.len() == limit {
-                break;
-            }
-            if bytes + record_bytes + 1 > max_bytes {
-                if records.is_empty() {
-                    return Err(ErrorCode::LimitExceeded.into());
-                }
-                break;
-            }
-            bytes += record_bytes + 1;
-            records.push(record.clone());
-            position += 1;
-        }
-        Ok(Batch {
-            records,
-            gap,
-            cursor: Cursor {
-                epoch: state.epoch.clone(),
-                after: position - 1,
-            },
-        })
-    }
-    pub fn acknowledge(&self, cursor: &Cursor) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        if cursor.epoch != state.epoch || cursor.after >= state.next {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        while state
-            .records
-            .front()
-            .is_some_and(|(record, _, _)| record.event_id <= cursor.after)
-        {
-            if let Some((_, bytes, _)) = state.records.pop_front() {
-                state.bytes -= bytes;
-            }
-        }
-        Ok(())
-    }
-    pub fn set_available(&self, available: bool) {
-        if let Ok(mut state) = self.state.lock() {
-            state.available = available;
-        }
-    }
-}
+mod recorder;
+pub use recorder::Recorder;
 
 #[cfg(test)]
 mod tests {

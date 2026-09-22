@@ -59,8 +59,9 @@ optionally enabled CONNECT uses its admitted upstream authority instead.
 
 | Socket | Paths | Authority |
 | --- | --- | --- |
-| Control | `/aap/operator/v1/session/create`, `/session/revoke`, `/status`, `/reload` (same prefix) | Trusted launcher/operator only |
-| Observation | `/aap/observe/v1/read`, `/aap/observe/v1/ack` | Read/acknowledge all recorded sessions; no session creation or secret access |
+| Control | `/aap/operator/v1/session/create`, `/session/revoke`, `/observation/create`, `/observation/revoke`, `/status`, `/reload` (same prefix) | Trusted launcher/operator only |
+| Owner observation | `/aap/observe/v1/read`, `/aap/observe/v1/ack` | Read/acknowledge the owner channel across all sessions; no session creation or secret access |
+| Per-collector observation | `/aap/observe/v1/read`, `/aap/observe/v1/ack` | One immutable session/view/content grant and its own cursor/acknowledgment |
 | Per-session ingress | [Local agent API](local-http.md) | One immutable session grant |
 
 Create takes `resources`, `lifetime_seconds` (1–3600), optional `items`, and restrictive
@@ -82,6 +83,51 @@ acceptance into bounded local memory, not collector delivery or durable storage.
 It blocks new recorded work when full until acknowledgment; process death loses
 unpersisted records. The observer is trusted to acknowledge its actual consumption.
 
+The owner observation socket is privileged; do not give it to a scoped collector.
+The operator instead calls `/aap/operator/v1/observation/create` with:
+
+```json
+{
+  "scope": {
+    "sessions": ["<existing-session-id>"],
+    "views": ["agent", "upstream"],
+    "classes": ["metadata", "content"]
+  },
+  "limits": {"max_events": 1024, "max_bytes": 1048576},
+  "lifetime_seconds": 600
+}
+```
+
+Sets must be nonempty and duplicate-free. There are at most 64 explicit session
+IDs, two views, two classes, and sixteen live collectors. Sessions must already
+exist and be live; enrollment never includes history or subsequently created
+sessions. Limits must fit the configured recorder ceilings. Lifetime is
+1–3600 seconds, capped by the earliest enrolled session expiry.
+
+Enrollment returns `subscription_id` and `observation_socket`. Expose only that
+private socket to the collector. Read takes `limit` and an optional cursor;
+the result contains `deliveries: [{delivery_id, record}]`, a gap, and a cursor
+bound to this subscription and daemon epoch. Resume uses that exact cursor.
+Ack cannot advance beyond a delivered page and cannot use another subscription's
+cursor. Both read and ack reject attempts to select a new session or widen the
+grant. See [observation semantics](observation.md) for source versus delivery
+ordering and content classes.
+
+Revoke takes `{"subscription_id":"..."}` on the operator endpoint. Revocation,
+expiry, loss of any enrolled session, successful reload, and shutdown close the
+subscription and release only its retention claims. Expiry independently stops
+the listener; create/status also prune retired attachment entries. An invalid
+reload leaves live collectors unchanged. Old attachments/cursors cannot resume
+across daemon restart; a trusted operator must enroll a new subscription.
+
+Owner and collector claims share one copy of each event, subject to finite
+global retention and 8 MiB per session. Required work fails closed when any
+selected required queue cannot accept the complete update. **The owner channel
+also needs draining/acknowledgment**; scoped acknowledgments cannot erase its
+history or another collector's pending records. Best-effort consumer overflow
+drops only that consumer's update where global/session capacity permits the
+other queues to accept it. Global overflow can still produce broader gaps.
+
 Per-listener admission is 32 connections, with finite parsing/body/stream
 deadlines. The broker permits at most 64 sessions and 8 active upstream operations
 per session, with separate operation/approval budgets. Expired sessions deny new
@@ -94,6 +140,7 @@ Reload validates the complete candidate config/catalog pair before activation.
 Failure leaves the running generation and its sessions unchanged. Success
 requires a strictly newer revision and revokes **all** existing sessions,
 including unchanged grants. The trusted launcher creates fresh attachments.
+All scoped collector attachments are also revoked.
 Changes to store location/alias, runtime directory, or observation configuration
 require restart; there is no partial backend/collector migration during reload.
 
@@ -137,3 +184,7 @@ CA rotation, and independent upstream trust. Remote MCP and filesystem/network
 confinement remain unverified.
 The tunneled website test also runs the enrolled 303 variant: no implicit
 follow-up is sent, and its separately submitted GET has no credential body.
+
+Two collector process tests cover distinct session/content grants, immutable
+scope, cross-cursor rejection, acknowledgments, expiry, revocation, valid and
+invalid reload, and denial before upstream dispatch on required queue overflow.

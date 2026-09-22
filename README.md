@@ -25,8 +25,9 @@ request tools, with real-process form/JSON website tests. Optional
 [CONNECT/TLS inspection](docs/connect.md) also brokers provider and website
 requests through the session socket. [HTTP observation](docs/observation.md)
 now correlates sanitized agent/upstream views, ordered content, and logical
-request endings. Remote MCP, TCP, scoped observation consumers, complete
-connection coverage, and confinement demonstrations remain pending.
+request endings. Collectors have operator-enrolled private session/content
+subscriptions with isolated cursors and acknowledgments. Remote MCP, TCP,
+complete connection coverage, and confinement demonstrations remain pending.
 
 ## Development
 

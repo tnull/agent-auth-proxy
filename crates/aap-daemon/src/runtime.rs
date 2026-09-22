@@ -13,6 +13,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+mod observation;
 
 struct ConfiguredResolver {
     hosts: HashMap<String, Vec<IpAddr>>,
@@ -70,6 +71,7 @@ struct Generation {
     loaded: Loaded,
     broker: Arc<Broker>,
     sessions: HashMap<String, Attachment>,
+    observers: HashMap<String, observation::Attachment>,
     interception: Option<Arc<crate::interception::StoreInterception>>,
 }
 struct Control {
@@ -139,6 +141,7 @@ impl Control {
         let attachment = state.sessions.remove(id).ok_or(ErrorCode::SessionInvalid)?;
         state.broker.revoke(&attachment.session)?;
         drop(attachment);
+        Self::prune(&mut state);
         Ok(())
     }
     fn prune(state: &mut Generation) {
@@ -151,9 +154,13 @@ impl Control {
                 true
             }
         });
+        state
+            .observers
+            .retain(|_, attachment| attachment.valid(&state.sessions));
     }
     fn shutdown(&self) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+        state.observers.clear();
         for attachment in state.sessions.values() {
             state.broker.revoke(&attachment.session)?;
         }
@@ -193,6 +200,7 @@ impl Control {
         }
         state.sessions.clear();
         let revision = loaded.configuration.configuration_revision;
+        state.observers.clear();
         state.loaded = loaded;
         state.broker = candidate;
         state.interception = interception;
@@ -204,6 +212,8 @@ impl Control {
         if ![
             "/aap/operator/v1/session/create",
             "/aap/operator/v1/session/revoke",
+            "/aap/operator/v1/observation/create",
+            "/aap/operator/v1/observation/revoke",
             "/aap/operator/v1/status",
             "/aap/operator/v1/reload",
         ]
@@ -214,6 +224,14 @@ impl Control {
         let body = read_body(request).await?;
         match path.as_str() {
             "/aap/operator/v1/session/create" => json_response(&self.create(decode(&body)?)?),
+            "/aap/operator/v1/observation/create" => {
+                json_response(&self.create_observation(decode(&body)?)?)
+            }
+            "/aap/operator/v1/observation/revoke" => {
+                let request: ObservationReference = decode(&body)?;
+                self.revoke_observation(&request.subscription_id)?;
+                json_response(&serde_json::json!({"revoked":true}))
+            }
             "/aap/operator/v1/session/revoke" => {
                 let request: SessionReference = decode(&body)?;
                 self.revoke(&request.session_id)?;
@@ -228,7 +246,7 @@ impl Control {
                 let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
                 Self::prune(&mut state);
                 json_response(
-                    &serde_json::json!({"configuration_revision":state.loaded.configuration.configuration_revision,"sessions":state.sessions.len()}),
+                    &serde_json::json!({"configuration_revision":state.loaded.configuration.configuration_revision,"sessions":state.sessions.len(),"observers":state.observers.len()}),
                 )
             }
             _ => Err(ErrorCode::PolicyDenied.into()),
@@ -334,6 +352,7 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
             loaded,
             broker,
             sessions: HashMap::new(),
+            observers: HashMap::new(),
             interception,
         }),
         reload_gate: tokio::sync::Mutex::new(()),
