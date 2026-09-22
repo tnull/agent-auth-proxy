@@ -1,4 +1,6 @@
 //! Private authentication transformations; no independent network access.
+pub mod cookies;
+pub mod login;
 use aap_secrets::{Field, Snapshot};
 use aap_types::{ErrorCode, Response, Result};
 use base64::Engine;

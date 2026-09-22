@@ -238,3 +238,36 @@ or actual sandbox egress denial. W5/W6 website credentials, MCP, private cookie
 sessions, remaining W7 transports/observation, reuse examples, and macOS native
 custody are still pending. Required observation currently accepts into bounded
 local memory only; it is not a durable collector-delivery guarantee.
+
+## Website authentication primitives
+
+`aap-auth::login` now supports independently random fake username/password
+values, strict bounded form/JSON validation before secret substitution, exact
+field/pointer replacement, and JSON-page CSRF virtualization. Eight additional
+tests across login and cookies initially failed against stubs and now pass.
+They exercise valid reusable placeholders, special-character serialization,
+duplicate/misplaced/foreign placeholders, malformed percent/UTF-8/JSON input,
+CSRF rotation, and exact response-token replacement. Visible-username disclosure
+remains unsupported until its approval path is integrated.
+
+`aap-auth::cookies` provides a private exact-origin jar for the conservative
+host-only Secure fixture profile. Tests cover independent jars/ports/hosts,
+path/default selection, sensitive headers, replacement, Max-Age/Expires,
+deletion, malformed/unsupported attributes, prefix rules, batch/count/history
+limits, removal of all setting headers, and clearing authority on failed capture.
+Replaced/deleted values remain in bounded echo-suppression history rather than
+being silently forgotten. The supported subset and upstream references are
+documented in the [authentication crate](../crates/aap-auth/README.md).
+
+The normal client dependency graph still excludes policy, authentication,
+credential stores, and TLS. These transforms add no new external packages:
+form serialization and HTTP-date parsing reuse packages already in the lockfile.
+All 75 unit tests, five process tests, and the compile-fail doctest pass on Rust
+1.95.0 and 1.88.0; format/check/Clippy/documentation checks pass on 1.95.0.
+
+W5/W6 remain incomplete. These helpers do not authorize requests or provide
+session/context lifecycle, attempt quotas, approval, credential-version checks,
+application login success, redirect handling, MCP, or CONNECT interception.
+The next vertical step must integrate those controls in the engine and prove
+the complete fake-login-to-protected-resource exchange over real TLS; passing
+transform tests alone does not establish end-to-end credential isolation.

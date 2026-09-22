@@ -39,6 +39,12 @@ it is advertised. Redirect handling is deny-by-default; separately prove a
 declared same-origin post-login GET transition and rejection of 307/308 password
 re-forwarding. No HTTP library follows redirects implicitly.
 
+The controlled cookie fixture starts with host-only Secure cookies and
+same-origin requests. Any Domain, SameSite=None, Partitioned, or unknown cookie
+extension is unsupported. Support broader cookie domains only with reviewed
+domain/public-suffix behavior; rejecting all Domain attributes is intentional
+for this first profile. Cookies without HttpOnly remain equally private.
+
 Pin the remote MCP transport/protocol version when adding the adapter and record
 it in the fixture and operator docs. Unsupported negotiation or server-initiated
 capabilities fail explicitly. The initial mediated server fixture performs only
