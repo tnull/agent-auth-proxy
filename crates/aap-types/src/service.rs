@@ -9,6 +9,11 @@ pub type Response = http::Response<Body>;
 /// Implementations must enforce shared session quotas across every frontend.
 pub trait AgentService: Send + Sync {
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>>;
+    /// Trusted adapter seam: resolve a unique enrolled profile and use the same
+    /// authorized pipeline. Not exposed as a separate local JSON/MCP operation.
+    fn forward(&self, _request: crate::proxy::ForwardRequest) -> BoxFuture<'_, Result<Response>> {
+        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    }
     fn search_items(&self, request: SearchItems) -> BoxFuture<'_, Result<SearchResult>>;
     fn get_login(&self, request: GetLogin) -> BoxFuture<'_, Result<Login>>;
     fn auth_status(&self, request: AuthContext) -> BoxFuture<'_, Result<AuthStatus>>;
@@ -17,6 +22,7 @@ pub trait AgentService: Send + Sync {
     fn cancel(&self, request_id: String) -> BoxFuture<'_, Result<OperationStatus>>;
 
     /// Authorize a TLS CONNECT authority before issuing an interception leaf.
-    /// Each request inside the connection must still pass through `execute`.
+    /// Each request inside the connection must still pass through the engine's
+    /// authorized forwarding/execution pipeline.
     fn admit_connect(&self, authority: String) -> BoxFuture<'_, Result<()>>;
 }

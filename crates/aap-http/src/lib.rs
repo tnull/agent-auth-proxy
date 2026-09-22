@@ -7,6 +7,8 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{os::unix::net::UnixListener, sync::Arc, time::Duration};
 
+pub mod proxy;
+
 /// A host-bound local router. Different authority planes need different listeners
 /// and handler instances; caller headers never select a handler.
 pub trait LocalHandler: Send + Sync {
@@ -19,9 +21,26 @@ pub async fn serve_session(
     expected_uid: u32,
     shutdown: Cancellation,
 ) -> Result<()> {
-    serve_local(
+    serve_bound(
         listener,
-        Arc::new(SessionHandler(session)),
+        Router::Session(session, None),
+        expected_uid,
+        shutdown,
+    )
+    .await
+}
+
+/// A session listener that additionally accepts destination-admitted CONNECT.
+pub async fn serve_intercepting_session(
+    listener: UnixListener,
+    session: Arc<dyn AgentService>,
+    identities: Arc<dyn proxy::InterceptionProvider>,
+    expected_uid: u32,
+    shutdown: Cancellation,
+) -> Result<()> {
+    serve_bound(
+        listener,
+        Router::Session(session, Some(identities)),
         expected_uid,
         shutdown,
     )
@@ -31,6 +50,23 @@ pub async fn serve_session(
 pub async fn serve_local(
     listener: UnixListener,
     handler: Arc<dyn LocalHandler>,
+    expected_uid: u32,
+    shutdown: Cancellation,
+) -> Result<()> {
+    serve_bound(listener, Router::Local(handler), expected_uid, shutdown).await
+}
+
+#[derive(Clone)]
+enum Router {
+    Local(Arc<dyn LocalHandler>),
+    Session(
+        Arc<dyn AgentService>,
+        Option<Arc<dyn proxy::InterceptionProvider>>,
+    ),
+}
+async fn serve_bound(
+    listener: UnixListener,
+    router: Router,
     expected_uid: u32,
     shutdown: Cancellation,
 ) -> Result<()> {
@@ -48,14 +84,23 @@ pub async fn serve_local(
             accepted = listener.accept(), if connections.len() < 32 => {
                 let (stream, _) = accepted.map_err(|_| ErrorCode::InternalError)?;
                 if !stream.peer_cred().is_ok_and(|credentials| credentials.uid() == expected_uid) { continue; }
-                let handler = handler.clone(); let cancelled = shutdown.clone();
+                let router = router.clone(); let cancelled = shutdown.clone();
                 connections.spawn(async move {
-                    let service = service_fn(move |request| { let handler = handler.clone(); async move {
-                        Ok::<_, std::convert::Infallible>(handler.handle(request).await)
-                    }});
-                    let mut builder = hyper::server::conn::http1::Builder::new();
-                    builder.keep_alive(false).max_headers(64).max_buf_size(64*1024).timer(TokioTimer::new()).header_read_timeout(Duration::from_secs(10));
-                    let connection = builder.serve_connection(TokioIo::new(stream), service);
+                    let connection = async move {
+                        let pending = Arc::new(std::sync::Mutex::new(None));
+                        let handoff = pending.clone();
+                        let service = service_fn(move |request| { let router = router.clone(); let pending = pending.clone(); async move {
+                            let response = match router {
+                                Router::Local(handler) => handler.handle(request).await,
+                                Router::Session(session, Some(identities)) if request.method() == http::Method::CONNECT => proxy::admit(request,session,identities,pending).await.unwrap_or_else(error_response),
+                                Router::Session(session, _) => SessionHandler(session).handle(request).await,
+                            };
+                            Ok::<_, std::convert::Infallible>(response)
+                        }});
+                        let _ = http1_builder().serve_connection(TokioIo::new(stream), service).with_upgrades().await;
+                        let upgrade = handoff.lock().ok().and_then(|mut pending| pending.take());
+                        if let Some(upgrade) = upgrade { let _ = proxy::serve_tunnel(upgrade).await; }
+                    };
                     tokio::select! { _ = cancelled.cancelled() => {}, _ = tokio::time::timeout(Duration::from_secs(610), connection) => {} }
                 });
             },
@@ -64,6 +109,17 @@ pub async fn serve_local(
     connections.abort_all();
     while connections.join_next().await.is_some() {}
     Ok(())
+}
+
+fn http1_builder() -> hyper::server::conn::http1::Builder {
+    let mut builder = hyper::server::conn::http1::Builder::new();
+    builder
+        .keep_alive(false)
+        .max_headers(64)
+        .max_buf_size(64 * 1024)
+        .timer(TokioTimer::new())
+        .header_read_timeout(Duration::from_secs(10));
+    builder
 }
 
 struct SessionHandler(Arc<dyn AgentService>);

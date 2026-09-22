@@ -3,8 +3,8 @@
 This describes implemented behavior, not the full planned product. The current
 daemon brokers explicitly submitted API-key and profiled website requests, with
 password-manager discovery/fake credentials/status/logout and a local stdio
-MCP bridge. It is not yet a general HTTP CONNECT proxy, remote MCP mediator,
-or sandbox launcher.
+MCP bridge and optional [session-bound CONNECT inspection](connect.md).
+It is not yet a remote MCP mediator or sandbox launcher.
 
 ## Configuration and startup
 
@@ -37,6 +37,7 @@ MCP, not the unlock-key channel. See [the bridge contract](mcp.md).
 | `store` | SQLCipher `alias` and private existing `directory` |
 | `runtime_directory` | Existing private directory for sockets/readiness/lock |
 | `upstream_roots_der_base64` | Explicit canonical base64 DER trust roots; no implicit test or system roots |
+| `interception` | Optional public CA certificate and private store reference; see [CONNECT](connect.md) |
 | `static_hosts` | Optional exact canonical hostname to IP list; all addresses still require profile admission |
 | `profiles` | Validated resource profiles and exact permitted routes |
 | `require_approval` | Default false; true fails closed because no production approval adapter is configured |
@@ -52,8 +53,9 @@ unsafe access rather than changing an existing file's permissions.
 Successful startup writes private `control.json` in the runtime directory and
 prints the same readiness object to stdout. It contains schema version `1`, a
 fresh random `daemon_epoch`, and basenames for the control and observation
-sockets. All sockets are owner-only, check peer UID, and use HTTP/1.1 POST with
-`Host: aap.local` and `Content-Type: application/json`.
+sockets. All sockets are owner-only and check peer UID. JSON API calls use
+HTTP/1.1 POST with `Host: aap.local` and `Content-Type: application/json`;
+optionally enabled CONNECT uses its admitted upstream authority instead.
 
 | Socket | Paths | Authority |
 | --- | --- | --- |
@@ -129,5 +131,7 @@ asynchronous approval, rotation, store lock, attempt limits, and uncertain login
 See [the engine contract](../crates/aap-engine/README.md) for the supported JSON
 response profile and finite context limits. A separate real-process test runs
 the form and JSON flows through two stdio MCP bridges, including duplicate
-execution/status and external observation. HTTP CONNECT, remote MCP, and
-filesystem/network confinement are not established by these tests.
+execution/status and external observation. Three additional process tests cover
+CONNECT with provider and website authentication, authority/context isolation,
+CA rotation, and independent upstream trust. Remote MCP and filesystem/network
+confinement remain unverified.

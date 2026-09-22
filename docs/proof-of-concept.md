@@ -363,3 +363,43 @@ CONNECT/TLS inspection,
 the declared redirect transition, remote MCP/TCP, complete observation views,
 real confinement and external reuse evidence, remaining store recovery work,
 and native macOS custody are not established by this local MCP milestone.
+
+## Session-bound CONNECT and TLS inspection
+
+The session listener now optionally accepts CONNECT and terminates downstream
+TLS using an operator-enrolled, store-held CA key. Certificate construction,
+HTTP adaptation, and engine destination/account selection remain separate
+reusable components. Every inspected request goes through the existing engine;
+there is no raw tunnel fallback. Native CA material is excluded from the agent
+catalog. Configuration checks public CA constraints without reading its key;
+store lease/key consistency is checked on admitted use.
+
+Nine additional unit tests cover strict authority/forwarding DTOs, destination
+and DNS admission, unique profile selection and existing operation semantics,
+required recording before signing admission, real scoped-trust/SNI/ALPN/IP TLS
+handshakes, invalid CA material, and inner/outer HTTP authority/header checks.
+Authority, engine, certificate, parser, and required-observation behavior tests
+failed before their implementations and then passed. The issuer helper validates
+CA constraints and signatures explicitly because rcgen's CA import does not.
+
+Three additional actual-daemon process tests exercise provider-key injection
+and sanitized streaming through CONNECT; complete fake-credential form login,
+private CSRF/cookies, protected access, implicit-context ambiguity and explicit
+selection; and CA-version rotation after an established TLS handshake, private
+key mismatch, and independent upstream trust failure. The two initial tunnel
+tests failed when the daemon still rejected CONNECT. Rotated or denied traffic
+does not add an upstream application request. No global CA/service or personal
+credential is used. Limits and unverified surfaces are in [the CONNECT contract](connect.md).
+
+All 107 unit tests, ten process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. Workspace compilation passes on both; formatting,
+Clippy, and public documentation builds pass on 1.95.0. No new lockfile package
+was required: rcgen and its X.509/time dependencies now also serve the production
+TLS-identity path, with default features disabled. Credential-free client/MCP
+dependencies remain separate from private custody.
+
+W6 is not yet complete: the separately declared post-login redirect transition
+and remaining compatibility/race cases are still open. W7/W8 also still require
+remote MCP/TCP, complete observation views and connection lifecycle, external
+reuse examples, and real confinement checks. Store-maintenance/recovery and
+native macOS custody remain on the original proof-of-concept plan.

@@ -32,6 +32,9 @@ pub enum View {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", rename_all = "snake_case")]
 pub enum Data {
+    ConnectAdmission {
+        authority: String,
+    },
     RequestStart {
         method: String,
         target: String,
@@ -127,6 +130,7 @@ impl Recorder {
             + event.request_id.len()
             + event.stream_id.len()
             + match &event.data {
+                Data::ConnectAdmission { authority } => authority.len(),
                 Data::ContentChunk { body_base64, .. } => body_base64.len(),
                 Data::RequestStart { method, target } => method.len() + target.len(),
                 Data::AuthTransition { item_id, .. } => item_id.len(),

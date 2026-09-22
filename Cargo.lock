@@ -68,11 +68,14 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rcgen",
  "rustix",
  "rustls",
  "serde",
  "serde_json",
+ "time",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
@@ -106,15 +109,18 @@ dependencies = [
  "aap-config",
  "aap-transport",
  "aap-types",
+ "base64",
  "bytes",
  "http",
  "http-body-util",
  "hyper",
  "hyper-util",
  "rustix",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
@@ -207,9 +213,12 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rcgen",
  "rustls",
+ "time",
  "tokio",
  "tokio-rustls",
+ "x509-parser",
 ]
 
 [[package]]

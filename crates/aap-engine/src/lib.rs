@@ -18,6 +18,7 @@ use tokio::{
 };
 
 mod pipeline;
+mod proxy;
 mod vault;
 mod website;
 
@@ -289,6 +290,12 @@ impl AgentService for Session {
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>> {
         Box::pin(self.execute_inner(request))
     }
+    fn forward(
+        &self,
+        request: aap_types::proxy::ForwardRequest,
+    ) -> BoxFuture<'_, Result<Response>> {
+        Box::pin(async move { self.forward_inner(request).await })
+    }
     fn search_items(&self, request: SearchItems) -> BoxFuture<'_, Result<SearchResult>> {
         Box::pin(async move { self.search_inner(request) })
     }
@@ -320,8 +327,8 @@ impl AgentService for Session {
             operation.status()
         })
     }
-    fn admit_connect(&self, _authority: String) -> BoxFuture<'_, Result<()>> {
-        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    fn admit_connect(&self, authority: String) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move { self.admit_connect_inner(&authority).await })
     }
 }
 

@@ -19,6 +19,9 @@ use std::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+#[path = "process/interception.rs"]
+mod interception;
+
 struct Fixture {
     root: PathBuf,
     origin: Origin,
@@ -73,6 +76,7 @@ impl Fixture {
             },
             runtime_directory: root.join("r"),
             upstream_roots_der_base64: vec![STANDARD.encode(origin.certificate.as_ref())],
+            interception: None,
             static_hosts: HashMap::from([("fixture.test".into(), vec![origin.address.ip()])]),
             require_approval: false,
             observation: ObservationConfig {

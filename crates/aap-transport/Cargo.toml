@@ -14,11 +14,15 @@ http-body-util.workspace = true
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util.workspace = true
 rustls.workspace = true
+rcgen = { workspace = true, features = ["x509-parser"] }
+x509-parser.workspace = true
+time.workspace = true
 tokio-rustls.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "time", "macros"] }
 
 [dev-dependencies]
 aap-test-support.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
 
 [lints]
 workspace = true

@@ -21,8 +21,10 @@ library suite with `cargo test -p aap-engine`. See the [daemon contract](docs/da
 The controlled form/JSON website flow now works through the engine, with a real
 daemon form-login test using fake credentials and private cookies. The
 [credential-free MCP bridge](docs/mcp.md) now exposes the vault and bounded
-request tools, with real-process form/JSON website tests. CONNECT, remote MCP,
-TCP, and confinement demonstrations remain pending.
+request tools, with real-process form/JSON website tests. Optional
+[CONNECT/TLS inspection](docs/connect.md) also brokers provider and website
+requests through the session socket. Remote MCP, TCP, complete observation,
+and confinement demonstrations remain pending.
 
 ## Development
 

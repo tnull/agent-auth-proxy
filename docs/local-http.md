@@ -24,8 +24,10 @@ listener has at most 32 active connections; connections are not kept alive.
 
 Exposure of a method does not imply the engine supports every profile. The
 broker implements API-key execution, the controlled website profile, and the
-four password-manager methods. Interception admission remains unsupported.
-CONNECT tunneling is not enabled by merely calling the admission endpoint.
+four password-manager methods. CONNECT admission checks resource grants, DNS
+addresses, and required observation, without reading site credentials.
+Tunneling requires the host to configure [interception](connect.md); calling
+the admission endpoint alone never issues a certificate or opens a tunnel.
 
 Proxy errors carry `x-aap-error: 1` and the fixed `Error` JSON DTO. Upstream
 HTTP error statuses remain ordinary upstream responses, not proxy errors.
@@ -44,5 +46,6 @@ Use explicit status/cancel calls; disconnect alone is not proof of remote rollba
 Server shutdown cancels listener work and drops in-flight execution futures.
 
 The [daemon/operator composition](daemon.md) uses distinct private listeners.
-Provider-compatible mounts and intercepted forward-proxy binding remain
-separate work, not hidden paths or permissive fallbacks on this session router.
+Provider-compatible path mounts remain separate work. Inspected HTTPS CONNECT
+is an optional explicitly configured binding on the same session socket, with
+the same session grant and engine pipeline; there is no opaque fallback.

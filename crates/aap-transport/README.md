@@ -22,4 +22,8 @@ body to its terminal outcome, not mistake received headers for completion.
 Nine tests use real local TLS (including untrusted and mismatched certificates),
 record upstream reception, and exercise redirection, ambiguous disconnects,
 stream cancellation, deadlines, framing, body limits, and separate resolution.
-Interception CA/server support and the constrained TCP relay remain pending.
+The interception module additionally validates a narrow self-signed root profile
+and consumes an explicitly supplied PKCS#8 key to issue a short-lived identity
+for an already admitted CONNECT authority. Two tests cover actual scoped-trust,
+SNI/ALPN/IP handshakes and invalid, expired, non-CA, or mismatched key material.
+It owns neither store lookup nor admission. The constrained TCP relay is pending.

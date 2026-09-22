@@ -34,6 +34,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "ti
 aap-store-sqlite.workspace = true
 
 [dev-dependencies]
+rcgen.workspace = true
+time.workspace = true
+tokio-rustls.workspace = true
 aap-client.workspace = true
 aap-test-support.workspace = true
 bytes.workspace = true

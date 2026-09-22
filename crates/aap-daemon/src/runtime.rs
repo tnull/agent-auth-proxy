@@ -70,6 +70,7 @@ struct Generation {
     loaded: Loaded,
     broker: Arc<Broker>,
     sessions: HashMap<String, Attachment>,
+    interception: Option<Arc<crate::interception::StoreInterception>>,
 }
 struct Control {
     directory: Arc<PrivateDir>,
@@ -98,12 +99,26 @@ impl Control {
             .bind_socket(&name)
             .map_err(|_| ErrorCode::InternalError)?;
         let shutdown = Cancellation::default();
-        let task = tokio::spawn(aap_http::serve_session(
-            binding.listener().map_err(|_| ErrorCode::InternalError)?,
-            Arc::new(session.clone()),
-            rustix::process::geteuid().as_raw(),
-            shutdown.clone(),
-        ));
+        let listener = binding.listener().map_err(|_| ErrorCode::InternalError)?;
+        let identities = state.interception.clone();
+        let session_service = Arc::new(session.clone());
+        let cancelled = shutdown.clone();
+        let task = tokio::spawn(async move {
+            let uid = rustix::process::geteuid().as_raw();
+            match identities {
+                Some(identities) => {
+                    aap_http::serve_intercepting_session(
+                        listener,
+                        session_service,
+                        identities,
+                        uid,
+                        cancelled,
+                    )
+                    .await
+                }
+                None => aap_http::serve_session(listener, session_service, uid, cancelled).await,
+            }
+        });
         state.sessions.insert(
             id.clone(),
             Attachment {
@@ -155,6 +170,14 @@ impl Control {
             .await
             .map_err(|_| ErrorCode::InternalError)??;
         let candidate = broker(&loaded, self.store.clone(), self.recorder.clone())?;
+        let interception = loaded
+            .configuration
+            .interception
+            .as_ref()
+            .map(|configuration| {
+                crate::interception::StoreInterception::new(configuration, self.store.clone())
+            })
+            .transpose()?;
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
         if loaded.configuration.configuration_revision
             <= state.loaded.configuration.configuration_revision
@@ -172,6 +195,7 @@ impl Control {
         let revision = loaded.configuration.configuration_revision;
         state.loaded = loaded;
         state.broker = candidate;
+        state.interception = interception;
         Ok(revision)
     }
     async fn dispatch(&self, request: http::Request<Incoming>) -> Result<Response> {
@@ -293,6 +317,14 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
         loaded.configuration.observation.max_bytes,
     )?;
     let broker = broker(&loaded, store.clone(), recorder.clone())?;
+    let interception = loaded
+        .configuration
+        .interception
+        .as_ref()
+        .map(|configuration| {
+            crate::interception::StoreInterception::new(configuration, store.clone())
+        })
+        .transpose()?;
     let control = Arc::new(Control {
         directory,
         runtime: runtime.clone(),
@@ -302,6 +334,7 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
             loaded,
             broker,
             sessions: HashMap::new(),
+            interception,
         }),
         reload_gate: tokio::sync::Mutex::new(()),
     });

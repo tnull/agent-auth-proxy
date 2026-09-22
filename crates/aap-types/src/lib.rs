@@ -4,6 +4,7 @@ pub mod ids;
 pub mod json;
 pub mod profile;
 pub mod protocol;
+pub mod proxy;
 pub mod service;
 pub mod wire;
 

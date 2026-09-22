@@ -3,6 +3,8 @@ use aap_policy::{Catalog, ResourceProfile};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::IpAddr, path::PathBuf};
 
+mod interception;
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DaemonConfig {
@@ -12,11 +14,19 @@ pub struct DaemonConfig {
     pub runtime_directory: PathBuf,
     pub upstream_roots_der_base64: Vec<String>,
     #[serde(default)]
+    pub interception: Option<InterceptionConfiguration>,
+    #[serde(default)]
     pub static_hosts: HashMap<String, Vec<IpAddr>>,
     pub profiles: Vec<ResourceProfile>,
     #[serde(default)]
     pub require_approval: bool,
     pub observation: ObservationConfig,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InterceptionConfiguration {
+    pub certificate_der_base64: String,
+    pub credential: aap_policy::CredentialRef,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,6 +131,7 @@ pub fn load(directory: &aap_config::PrivateDir) -> aap_types::Result<Loaded> {
         }
     }
     transport(&configuration)?;
+    interception::validate(&configuration, &catalog)?;
     aap_observe::Recorder::new(
         aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
         configuration.observation.max_events,
