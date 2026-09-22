@@ -19,8 +19,10 @@ sanitized streamed output. Exercise it without personal credentials or live
 provider requests with `cargo test -p aap-daemon --test process` or the broader
 library suite with `cargo test -p aap-engine`. See the [daemon contract](docs/daemon.md).
 The controlled form/JSON website flow now works through the engine, with a real
-daemon form-login test using fake credentials and private cookies. CONNECT,
-MCP/TCP, and confinement demonstrations remain pending.
+daemon form-login test using fake credentials and private cookies. The
+[credential-free MCP bridge](docs/mcp.md) now exposes the vault and bounded
+request tools, with real-process form/JSON website tests. CONNECT, remote MCP,
+TCP, and confinement demonstrations remain pending.
 
 ## Development
 

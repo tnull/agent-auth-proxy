@@ -66,6 +66,9 @@ input members are rejected. Tool schemas and outputs carry no hidden authority.
 Examples below show application payloads carried in MCP tool results; normal
 MCP transport envelopes remain governed by the negotiated MCP version. Errors
 use the common `code`, optional `request_id`, and safe explanation contract.
+The [MCP adapter contract](mcp.md) pins the first version, defines the accompanying
+`request.*` internet-access/status/cancel tools, and specifies wire limits and
+the credential-free stdio bridge.
 
 ### `vault.search_items`
 

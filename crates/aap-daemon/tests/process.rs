@@ -538,18 +538,24 @@ async fn expired_session_cannot_dispatch_and_is_pruned_by_control() {
     stop(&mut child).await;
 }
 
-#[tokio::test]
-async fn standalone_password_manager_keeps_website_sessions_private_and_isolated() {
+async fn website_fixture() -> Fixture {
+    website_fixture_for(aap_types::profile::LoginEncoding::Form).await
+}
+
+async fn website_fixture_for(encoding: aap_types::profile::LoginEncoding) -> Fixture {
     use aap_types::{
-        AuthContext, AuthState, CredentialFields, GetLogin, SearchItems,
+        CredentialFields,
         profile::{CsrfProfile, LoginEncoding, LoginProfile, LoginSuccess},
     };
     let mut fixture = Fixture::new().await;
-    fixture.origin = Origin::with_handler(|request| {
+    fixture.origin = Origin::with_handler(move |request| {
         let mut reply = match request.target.path() {
             "/login" => { let mut reply = Reply::body(r#"{"csrf":"private-site-csrf","echo":"private-pre"}"#); reply.headers.push(("set-cookie".into(),"pre=private-pre; Secure; Path=/".into())); reply },
             "/session" => {
-                assert_eq!(request.body,"user=private-website-user&password=private-website-password&csrf=private-site-csrf");
+                match encoding {
+                    LoginEncoding::Form => assert_eq!(request.body,"user=private-website-user&password=private-website-password&csrf=private-site-csrf"),
+                    LoginEncoding::Json => assert_eq!(serde_json::from_slice::<Value>(&request.body).unwrap(),json!({"user":"private-website-user","password":"private-website-password","csrf":"private-site-csrf"})),
+                }
                 assert_eq!(request.headers["cookie"],"pre=private-pre");
                 let mut reply = Reply::body(r#"{"authenticated":true,"echo":"private-website-password private-website-cookie"}"#);
                 reply.headers.push(("set-cookie".into(),"session=private-website-cookie; Secure; HttpOnly; Path=/".into())); reply
@@ -615,10 +621,20 @@ async fn standalone_password_manager_keeps_website_sessions_private_and_isolated
         login: LoginProfile {
             page: format!("{}/login", fixture.origin.origin()),
             target: format!("{}/session", fixture.origin.origin()),
-            encoding: LoginEncoding::Form,
+            encoding,
             fields: CredentialFields {
-                username: "user".into(),
-                password: "password".into(),
+                username: if encoding == LoginEncoding::Form {
+                    "user"
+                } else {
+                    "/user"
+                }
+                .into(),
+                password: if encoding == LoginEncoding::Form {
+                    "password"
+                } else {
+                    "/password"
+                }
+                .into(),
             },
             username_visible: false,
             success: LoginSuccess {
@@ -629,11 +645,23 @@ async fn standalone_password_manager_keeps_website_sessions_private_and_isolated
             },
             csrf: Some(CsrfProfile {
                 response_pointer: "/csrf".into(),
-                submit_field: "csrf".into(),
+                submit_field: if encoding == LoginEncoding::Form {
+                    "csrf"
+                } else {
+                    "/csrf"
+                }
+                .into(),
             }),
         },
     };
     fixture.write();
+    fixture
+}
+
+#[tokio::test]
+async fn standalone_password_manager_keeps_website_sessions_private_and_isolated() {
+    use aap_types::{AuthContext, AuthState, GetLogin, SearchItems};
+    let fixture = website_fixture().await;
     let (mut child, ready) = fixture.start().await;
     let control = fixture.root.join("r").join(ready.control_socket);
     let mut clients = Vec::new();
@@ -796,4 +824,260 @@ async fn standalone_password_manager_keeps_website_sessions_private_and_isolated
         }
     }
     stop(&mut child).await;
+}
+
+struct McpPeer {
+    child: tokio::process::Child,
+    input: tokio::process::ChildStdin,
+    output: BufReader<tokio::process::ChildStdout>,
+    next_id: u64,
+}
+impl McpPeer {
+    async fn start(socket: PathBuf) -> Self {
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_agent-auth-proxy"))
+            .arg("mcp-bridge")
+            .arg(socket)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let input = child.stdin.take().unwrap();
+        let output = BufReader::new(child.stdout.take().unwrap());
+        let mut peer = Self {
+            child,
+            input,
+            output,
+            next_id: 1,
+        };
+        peer.send(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fixture","version":"1"}}})).await;
+        assert_eq!(
+            peer.receive().await["result"]["protocolVersion"],
+            "2025-11-25"
+        );
+        peer.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await;
+        peer
+    }
+    async fn send(&mut self, value: Value) {
+        let mut bytes = serde_json::to_vec(&value).unwrap();
+        bytes.push(b'\n');
+        self.input.write_all(&bytes).await.unwrap();
+    }
+    async fn receive(&mut self) -> Value {
+        let mut line = String::new();
+        let count = tokio::time::timeout(Duration::from_secs(5), self.output.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(count > 0, "bridge exited without an MCP response");
+        serde_json::from_str(&line).unwrap()
+    }
+    async fn call(&mut self, name: &str, arguments: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":arguments}})).await;
+        let result = self.receive().await;
+        assert_eq!(result["id"], id);
+        assert!(result.get("error").is_none());
+        let wire = serde_json::to_string(&result).unwrap();
+        for secret in [
+            "private-website-user",
+            "private-website-password",
+            "private-website-cookie",
+            "private-pre",
+            "private-site-csrf",
+        ] {
+            assert!(!wire.contains(secret));
+        }
+        result["result"].clone()
+    }
+    async fn close(mut self) {
+        drop(self.input);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), self.child.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+        use tokio::io::AsyncReadExt;
+        let mut errors = Vec::new();
+        self.child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_end(&mut errors)
+            .await
+            .unwrap();
+        assert!(errors.is_empty(), "bridge emitted non-protocol diagnostics");
+    }
+}
+
+#[tokio::test]
+async fn real_stdio_bridges_complete_private_isolated_website_logins() {
+    for encoding in [
+        aap_types::profile::LoginEncoding::Form,
+        aap_types::profile::LoginEncoding::Json,
+    ] {
+        stdio_website_flow(encoding).await;
+    }
+}
+
+async fn stdio_website_flow(encoding: aap_types::profile::LoginEncoding) {
+    use aap_types::profile::LoginEncoding;
+    let fixture = website_fixture_for(encoding).await;
+    let (mut daemon, ready) = fixture.start().await;
+    let control = fixture.root.join("r").join(ready.control_socket);
+    let uri = format!("{}/login", fixture.origin.origin());
+    let mut peers = Vec::new();
+    let mut logins = Vec::new();
+    for _ in 0..2 {
+        let (status, attachment) = local(
+            control.clone(),
+            "/aap/operator/v1/session/create",
+            json!({"resources":["provider"],"items":["key"],"lifetime_seconds":60}),
+        )
+        .await;
+        assert!(status.is_success());
+        let attachment: SessionAttachment = serde_json::from_value(attachment).unwrap();
+        let mut peer = McpPeer::start(fixture.root.join("r").join(attachment.ingress_socket)).await;
+        let search = peer.call("vault.search_items", json!({"uri":uri})).await;
+        assert_eq!(search["structuredContent"]["items"][0]["item_id"], "key");
+        let login=peer.call("vault.get_login",json!({"request_id":aap_types::ids::random_id(16).unwrap(),"item_id":"key","uri":uri})).await;
+        assert_eq!(login["isError"], false);
+        logins.push(login["structuredContent"].clone());
+        peers.push(peer);
+    }
+    assert_ne!(logins[0]["auth_context"], logins[1]["auth_context"]);
+    let request = |context: &Value, method: &str, path: &str, body: &[u8]| {
+        json!({
+            "request_id":aap_types::ids::random_id(16).unwrap(),"resource":"provider","auth_context":context,"method":method,"target":format!("{}{path}",fixture.origin.origin()),
+            "headers":if body.is_empty(){json!([])}else{json!([["content-type",if encoding==LoginEncoding::Form {"application/x-www-form-urlencoded"} else {"application/json"}]])},"body_base64":STANDARD.encode(body)
+        })
+    };
+    for (peer, login) in peers.iter_mut().zip(&logins) {
+        let context = &login["auth_context"];
+        let page = peer
+            .call("request.execute", request(context, "GET", "/login", b""))
+            .await;
+        let page: Value = serde_json::from_slice(
+            &STANDARD
+                .decode(page["structuredContent"]["body_base64"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(page["echo"], "[redacted]");
+        let form = if encoding == LoginEncoding::Json {
+            json!({"user":login["credentials"]["username"]["value"],"password":login["credentials"]["password"]["value"],"csrf":page["csrf"]}).to_string()
+        } else {
+            format!(
+                "user={}&password={}&csrf={}",
+                login["credentials"]["username"]["value"].as_str().unwrap(),
+                login["credentials"]["password"]["value"].as_str().unwrap(),
+                page["csrf"].as_str().unwrap()
+            )
+        };
+        let result = peer
+            .call(
+                "request.execute",
+                request(context, "POST", "/session", form.as_bytes()),
+            )
+            .await;
+        assert_eq!(result["isError"], false);
+        let body: Value = serde_json::from_slice(
+            &STANDARD
+                .decode(result["structuredContent"]["body_base64"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["echo"], "[redacted] [redacted]");
+        let status = peer
+            .call("vault.auth_status", json!({"auth_context":context}))
+            .await;
+        assert_eq!(status["structuredContent"]["state"], "authenticated");
+        let protected = request(context, "GET", "/protected", b"");
+        let request_id = protected["request_id"].clone();
+        let response = peer.call("request.execute", protected.clone()).await;
+        let bytes = STANDARD
+            .decode(
+                response["structuredContent"]["body_base64"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["data"],
+            "protected"
+        );
+        assert_eq!(
+            peer.call("request.execute", protected).await["structuredContent"]["kind"],
+            "operation"
+        );
+        assert_eq!(
+            peer.call("request.status", json!({"request_id":request_id}))
+                .await["structuredContent"]["state"],
+            "completed"
+        );
+    }
+    assert_eq!(
+        peers[1]
+            .call(
+                "request.execute",
+                request(&logins[0]["auth_context"], "GET", "/protected", b"")
+            )
+            .await["isError"],
+        true
+    );
+    for (mut peer, login) in peers.into_iter().zip(logins) {
+        let context = &login["auth_context"];
+        assert_eq!(
+            peer.call("vault.logout", json!({"auth_context":context}))
+                .await["structuredContent"]["state"],
+            "revoked"
+        );
+        assert_eq!(
+            peer.call(
+                "request.execute",
+                request(context, "GET", "/protected", b"")
+            )
+            .await["isError"],
+            true
+        );
+        peer.close().await;
+    }
+    assert_eq!(
+        fixture.origin.requests.lock().unwrap().len(),
+        6,
+        "duplicate or denied MCP work was dispatched"
+    );
+    let (_, batch) = local(
+        fixture.root.join("r").join(ready.observation_socket),
+        "/aap/observe/v1/read",
+        json!({"limit":512}),
+    )
+    .await;
+    for record in serde_json::from_value::<aap_observe::Batch>(batch)
+        .unwrap()
+        .records
+    {
+        if let aap_observe::Data::ContentChunk { body_base64, .. } = record.event.data {
+            let bytes = STANDARD.decode(body_base64).unwrap();
+            let value = String::from_utf8_lossy(&bytes);
+            for private in [
+                "private-website-user",
+                "private-website-password",
+                "private-website-cookie",
+                "private-pre",
+                "private-site-csrf",
+                "aap_pw1_",
+                "aap_un1_",
+                "aap_cs1_",
+            ] {
+                assert!(!value.contains(private));
+            }
+        }
+    }
+    stop(&mut daemon).await;
 }

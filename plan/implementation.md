@@ -192,7 +192,11 @@ Implement `vault.search_items`, `vault.get_login`, `vault.auth_status`, and
 `vault.logout` exactly as described in [the tool contract](password-manager.md).
 The MCP adapter translates data and errors; the engine/authentication libraries
 own item matching, placeholder issuance, and cookie state. Add a constrained
-internet-access tool that submits HTTP work to the same session interface.
+`request.execute` internet-access tool and `request.status`/`request.cancel`
+tools on that same session interface. Follow the [MCP adapter contract](mcp.md)
+for version negotiation, result envelopes, bounded stdio, and approval-safe
+concurrency. Prove the credential-free bridge with real process tests before
+claiming local MCP support; remote MCP remains a separate W7 gate.
 
 Demonstrate one complete workflow with a controlled site:
 

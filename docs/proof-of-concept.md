@@ -316,3 +316,50 @@ cases, and complete observation views still need evidence. Website responses
 are currently bounded JSON, and redirects/unsupported profiles fail closed.
 Remote MCP/TCP, actual sandbox confinement, reusable examples, remaining store
 maintenance/recovery, and native macOS custody also remain on the original plan.
+
+## Credential-free MCP tools and stdio bridge
+
+`aap-mcp` now supplies the seven local vault/request tools over `AgentService`
+and an owned, bounded stdio loop. The daemon's `mcp-bridge SESSION_SOCKET`
+command composes it with the existing client without configuration/store/key
+access. MCP `2025-11-25` is pinned independently of the SDK package. Admission
+occurs before handler spawning; framing, parsing, retained result reservations,
+response collection, output stalls, cancellation, and shutdown have finite
+bounds. Status/cancel work remains available while work calls are pending.
+
+Ten adapter tests cover strict schemas and delegation, safe errors, exact binary
+bodies, duplicate-operation envelopes versus resource JSON, result limits,
+initialization, real stdio frames, duplicate-member/oversized input rejection,
+pending work and correlation-ID cancellation, overload/control capacity,
+concurrent duplicate RPC IDs, EOF cleanup, and deterministic timeout checks.
+Initial tool and wire tests failed against stubs before implementation.
+
+A seventh process test failed before the CLI bridge existed, then passed with
+the bridge. It runs two independent bridge processes against actual daemon
+sessions and a synthetic SQLCipher vault. Both form and JSON website variants
+cover catalog lookup, fake credentials, CSRF, private cookies, protected data,
+duplicate requests/status, cross-session denial, logout, and a separately
+attached observation consumer. No real credential appears in the tool results
+or observation content, and duplicate/denied operations do not add upstream
+requests. Successful bridge stderr is empty.
+
+The official `rmcp` 3.4.0 SDK is the only new direct external package. All of
+its optional/default features are disabled; the adapter uses its protocol types
+without its payload-logging/unbounded handler loop. Cargo adds 34 lockfile
+packages, including platform-specific transitive dependencies; the normal MCP
+closure contains no engine, store, TLS connector, OAuth client, SDK macro/schema
+feature, or private-cookie component. The agent client closure is unchanged.
+
+Notification cancellation drops the matching owned service invocation, not a
+guessed application operation. Explicit `request.cancel`/`request.status` are
+the authoritative daemon controls. A lost transport does not prove upstream
+cancellation or rollback. See [the implemented MCP contract](mcp.md) for exact
+limits and the separation from remote MCP and sandbox guarantees.
+
+All 98 unit tests, seven process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. Workspace checks pass on both; formatting, Clippy, and
+public documentation builds pass on 1.95.0. The complete proof is still open:
+CONNECT/TLS inspection,
+the declared redirect transition, remote MCP/TCP, complete observation views,
+real confinement and external reuse evidence, remaining store recovery work,
+and native macOS custody are not established by this local MCP milestone.

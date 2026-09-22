@@ -2,8 +2,9 @@
 
 This describes implemented behavior, not the full planned product. The current
 daemon brokers explicitly submitted API-key and profiled website requests, with
-password-manager discovery/fake credentials/status/logout. It is not yet a
-general HTTP CONNECT proxy, MCP server, or sandbox launcher.
+password-manager discovery/fake credentials/status/logout and a local stdio
+MCP bridge. It is not yet a general HTTP CONNECT proxy, remote MCP mediator,
+or sandbox launcher.
 
 ## Configuration and startup
 
@@ -22,6 +23,10 @@ Never place the key in a shell command, environment variable, or configuration.
 The CLI does not yet offer interactive provisioning or an OS unlock service.
 The existing store must be provisioned through `aap-store-sqlite` by trusted
 code; the process test demonstrates this with synthetic values only.
+
+`agent-auth-proxy mcp-bridge SESSION_SOCKET` runs the credential-free stdio
+adapter without loading this configuration or opening a store. Its stdin is
+MCP, not the unlock-key channel. See [the bridge contract](mcp.md).
 
 `DaemonConfig` in `aap-daemon` is the authoritative configuration type:
 
@@ -122,5 +127,7 @@ protected resource access with private cookies, context isolation, logout, and
 sanitized external observations. The engine suite also tests JSON login,
 asynchronous approval, rotation, store lock, attempt limits, and uncertain login.
 See [the engine contract](../crates/aap-engine/README.md) for the supported JSON
-response profile and finite context limits. Neither HTTP CONNECT interception
-nor MCP is established by the explicit local operation tests.
+response profile and finite context limits. A separate real-process test runs
+the form and JSON flows through two stdio MCP bridges, including duplicate
+execution/status and external observation. HTTP CONNECT, remote MCP, and
+filesystem/network confinement are not established by these tests.

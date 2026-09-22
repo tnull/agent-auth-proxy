@@ -19,6 +19,8 @@ aap-providers.workspace = true
 aap-observe.workspace = true
 aap-transport.workspace = true
 aap-http.workspace = true
+aap-client.workspace = true
+aap-mcp.workspace = true
 base64.workspace = true
 http.workspace = true
 hyper = { workspace = true, features = ["server", "http1"] }
@@ -26,7 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 rustls.workspace = true
 rustix.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time", "macros", "io-std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 aap-store-sqlite.workspace = true

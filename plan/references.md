@@ -11,6 +11,7 @@ local evidence, and project proposals.
 | [Cookies, RFC 6265](https://www.rfc-editor.org/rfc/rfc6265.html) | Base cookie semantics; additional browser behavior needs explicit profiles |
 | [HTTP early data, RFC 8470](https://www.rfc-editor.org/rfc/rfc8470.html) | Replay concerns support disabling early data on authenticated paths |
 | [MCP authorization, 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) | Separate local authorization and upstream OAuth audience/token handling |
+| [MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), and [cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation), 2025-11-25 | Pinned basis for the proposed local MCP adapter; project-specific tools and limits are specified separately in [its contract](mcp.md) |
 | [MCP security practices](https://modelcontextprotocol.io/docs/2025-11-25/tutorials/security/security_best_practices) | Confused-deputy and token-passthrough concerns |
 
 Pin protocol revisions for interoperability claims and review upgrades explicitly.

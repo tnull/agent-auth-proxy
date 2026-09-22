@@ -14,6 +14,7 @@ members = [
     "crates/aap-engine",
     "crates/aap-http",
     "crates/aap-client",
+    "crates/aap-mcp",
     "crates/aap-daemon",
 ]
 
@@ -37,6 +38,8 @@ aap-observe = { path = "crates/aap-observe" }
 aap-engine = { path = "crates/aap-engine" }
 aap-http = { path = "crates/aap-http" }
 aap-client = { path = "crates/aap-client" }
+aap-mcp = { path = "crates/aap-mcp" }
+rmcp = { version = "=3.4.0", default-features = false }
 base64 = "0.22"
 getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }

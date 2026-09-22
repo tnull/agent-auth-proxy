@@ -45,7 +45,9 @@ extension is unsupported. Support broader cookie domains only with reviewed
 domain/public-suffix behavior; rejecting all Domain attributes is intentional
 for this first profile. Cookies without HttpOnly remain equally private.
 
-Pin the remote MCP transport/protocol version when adding the adapter and record
+The [local MCP contract](mcp.md) pins version `2025-11-25`, its seven tools,
+bounded result envelopes, and credential-free bridge behavior. Pin the remote
+MCP transport/protocol version separately when adding mediation and record
 it in the fixture and operator docs. Unsupported negotiation or server-initiated
 capabilities fail explicitly. The initial mediated server fixture performs only
 declared local operations; do not infer visibility into arbitrary remote egress.

@@ -20,9 +20,12 @@ not mean its session has no authority or cannot be abused by code in the sandbox
 
 ## Agent-facing operation semantics
 
-These are normative logical operations. Their binding to a particular HTTP
-management API is deferred. The password-manager subset has concrete proposed
-MCP tool names and JSON schemas in [its contract](password-manager.md).
+These are normative logical operations. The proposed [MCP binding](mcp.md)
+defines tool envelopes and the constrained HTTP request surface; the
+password-manager payloads are defined in [their contract](password-manager.md).
+The implemented local HTTP subset is documented separately in
+[the local HTTP contract](../docs/local-http.md), without implying that every
+planned operation or proxy transport is implemented.
 Normal HTTP clients may use equivalent behavior through the admitted proxy
 connection.
 
@@ -102,9 +105,11 @@ The [approval contract](approval.md) specifies provider ownership, per-item
 policy, pending-operation limits, and race/decision semantics. Item settings
 are stored in the private [catalog](catalog.md), not in native password items.
 
-Reserve `pending_approval` now. Return only `request_id`, `approval_id`,
-`expires_at`, and a safe reason to the agent. The approval handle is a random
-32-byte base64url value bound to the same session and immutable operation.
+Reserve `pending_approval` now. Basic status polling may report that state
+without exposing an approval handle. If an adapter exposes additional pending
+approval details, limit them to `request_id`, `approval_id`, `expires_at`, and
+a safe reason. The approval handle is a random 32-byte base64url value bound
+to the same session and immutable operation.
 Polling it cannot approve it.
 
 A future independent human channel displays the verified resource, account,
