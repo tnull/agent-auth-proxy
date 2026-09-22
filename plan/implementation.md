@@ -154,6 +154,10 @@ so a crafted Host/path cannot access administration or choose another session.
 
 Configuration contains backend selection/references, provider and site profiles,
 listener settings, TLS trust configuration, observation settings, and quotas.
+Protect this metadata with user-owned `0700` directories and `0600` files,
+descriptor-based ownership/type/mode checks, safe paths, and private atomic
+updates. Reject unsafe files at startup and reload; see
+[catalog privacy](secret-stores.md#private-catalog-and-policy-metadata).
 Validate the entire configuration before accepting traffic. A reload installs a
 new validated generation atomically; removed grants/items revoke related work
 and contexts. Failed reloads leave the previous valid configuration active and
@@ -260,7 +264,7 @@ Keychain tests run separately on macOS using isolated test items/keychains.
 | Transport | DNS rebinding, authority mismatch, redirects, framing ambiguity, invalid upstream TLS, partial send/response, cancellation |
 | Provider profiles | Credential replacement, route/model limits, delegated network features, safe streaming and usage accounting |
 | Observation | Secrets split across chunks, safe error/redirect content, backpressure, gaps/resume, required-mode failures |
-| Daemon | Separate control/agent sockets, restart invalidation, graceful shutdown, configuration validation/reload |
+| Daemon | Separate control/agent sockets, restart invalidation, graceful shutdown, private configuration ownership/mode/path checks, atomic reload |
 | Embedding | Public API consumer compiles, no daemon/global side effects, shared behavior with daemon mode |
 | Confinement | Direct IPv4/IPv6/DNS/alternate-socket egress and access to host/control/other-session resources denied |
 

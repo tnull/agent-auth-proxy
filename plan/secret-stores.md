@@ -64,6 +64,34 @@ instantaneous change notification when a backend only supports polling/readback.
 Restart invalidates the proxy contexts, so local generations cannot revive an old
 binding. Secret fingerprints never appear in public metadata or logs.
 
+## Private catalog and policy metadata
+
+Store proxy grants, per-item approval requirements, resource profiles, and
+credential references in a versioned JSON catalog/configuration, separate from
+credential values. Existing Keychain items need no proprietary policy payload.
+Metadata is private even without passwords: it reveals enrolled sites/accounts.
+
+The catalog is `catalog.json` under `$XDG_CONFIG_HOME/agent-auth-proxy`
+(default `~/.config/agent-auth-proxy`) on Linux, and under
+`~/Library/Application Support/AgentAuthProxy` on macOS. Entries contain an opaque
+item alias, approved label/account alias, backend reference, profile reference,
+and item policy. Reject unknown schema versions and unknown/duplicate fields.
+This file is plaintext with filesystem protection, not an encrypted vault.
+
+On Unix, catalog/configuration directories MUST be user-owned with mode `0700`;
+files MUST be user-owned regular files with mode `0600`. Create temporary files
+and backups with those permissions from the start, and use atomic replacement
+after complete validation. Validate ownership/type/mode on the opened descriptor;
+reject symlinks, unexpected hard links, unsafe parent traversal, and excessive
+input size. Refuse unsafe configuration rather than silently changing permissions.
+Extended ACLs must not grant additional readers. Protect reloads identically.
+
+Do not expose catalog metadata through ordinary logs, agent mounts, or error
+messages. Owner-only permissions do not exclude root or other same-UID processes:
+the sandbox MUST hide the catalog, store, backups, and operator sockets even if
+its user matches the daemon's. Native platform support must verify actual ACL
+behavior as well as Unix mode bits.
+
 ## Minimal handling of secret values
 
 Use a small private-field Rust type over owned bytes with intentional access
@@ -87,8 +115,9 @@ keys or a non-encrypted SQLite build must fail closed, never create a plaintext
 replacement. [SQLCipher](https://www.zetetic.net/sqlcipher/),
 [rusqlite SQLCipher support](https://github.com/rusqlite/rusqlite)
 
-Keep item identities, private labels/usernames, secret fields, versions, and
-schema metadata inside the encrypted database. Transactions read a coherent
+Keep backend item identities, private usernames, secret fields, versions, and
+schema metadata inside the encrypted database. Operator-approved catalog labels
+and grants remain in the separate private JSON file. Transactions read a coherent
 item snapshot and advance its version on every managed mutation. Password
 rotation and deletion invalidate dependent bindings. Database encryption-key
 rotation is a distinct administrative operation.

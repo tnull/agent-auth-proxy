@@ -88,6 +88,17 @@ alone do not provide exactly-once execution at the resource.
 
 ## Human interaction extension
 
+Approval is an asynchronous engine-level interface, separate from `SecretStore`
+unlock/user-presence interaction. Global/session, item, and action requirements
+compose restrictively: any applicable requirement needs approval, and approval
+cannot override denial. Distinguish permission to authenticate from permission
+for an exact subsequent operation; cached cookies/tokens do not bypass the latter.
+Freeze the operation before requesting approval and do not resolve its password
+until the required approval succeeds. An unconfigured approval provider fails
+closed. A future signed-response adapter must verify the trusted approver and
+bind the decision to the operation, session, daemon epoch, expiry, and single-use
+approval identifier. Signing format and UI remain a separate integration task.
+
 Reserve `pending_approval` now. Return only `request_id`, `approval_id`,
 `expires_at`, and a safe reason to the agent. The approval handle is a random
 32-byte base64url value bound to the same session and immutable operation.
