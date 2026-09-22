@@ -78,6 +78,12 @@ facts. Agent text may be displayed only as untrusted content; it cannot replace
 the verified destination or hide relevant arguments. Neither prompts nor
 observations include real passwords, cookies, or native store references.
 
+For the proposed [TCP relay](tcp.md), freeze the enrolled endpoint, byte/time
+limits, inspection class, and observation requirement instead of HTTP fields.
+Present it as connection-level consent: future application bytes are not known
+at approval time. A policy requiring approval of each application action must
+deny an unparsed stream. No credential item is involved in the initial relay.
+
 A future signed-response adapter verifies signer authorization, signature,
 expiry, epoch, and the complete immutable binding before delivering a decision
 to the engine. Transport authentication or possession of an approval ID alone

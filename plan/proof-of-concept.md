@@ -54,6 +54,11 @@ in fixture and operator docs. Unsupported server operations fail explicitly.
 The mediated server fixture performs only declared local operations; do not
 infer visibility into arbitrary remote egress.
 
+The [TCP relay contract](tcp.md) narrows the byte-stream fixture to an explicitly
+enrolled credential-free service. Its duplex/half-close, shared capacity,
+approval, and observation acceptance checks are W7 gates. An arbitrary raw
+channel does not prove plaintext inspection or per-action authorization.
+
 ## Initial finite limits
 
 Use explicit limits from the first integrated tests. The following are proposed

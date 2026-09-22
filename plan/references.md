@@ -1,7 +1,8 @@
 # Sources and integration findings
 
-Research date: 2026-09-22. Sources distinguish published specifications,
-local evidence, and project proposals.
+Initial research: 2026-09-22; TCP/CONNECT references checked on 2026-09-23.
+Sources distinguish published specifications, local evidence, and project
+proposals.
 
 ## Standards assessment
 
@@ -10,6 +11,8 @@ local evidence, and project proposals.
 | [OAuth security BCP, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Security reference for token acquisition/refresh |
 | [Cookies, RFC 6265](https://www.rfc-editor.org/rfc/rfc6265.html) | Base cookie semantics; additional browser behavior needs explicit profiles |
 | [HTTP early data, RFC 8470](https://www.rfc-editor.org/rfc/rfc8470.html) | Replay concerns support disabling early data on authenticated paths |
+| [TCP half-close, RFC 9293 section 3.6.1](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.6.1) | Independent directional close underlies the proposed relay's duplex lifecycle; local framing, policy, and limits are project decisions |
+| [HTTP CONNECT, RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6) | Arbitrary tunnel destinations carry risk; raw relay enrollment must not become a fallback from inspected HTTPS |
 | [MCP authorization, 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) | Separate local authorization and upstream OAuth audience/token handling |
 | [MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), and [cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation), 2025-11-25 | Pinned basis for the proposed [local MCP adapter](mcp.md) and [remote MCP profile](remote-mcp.md); project-specific policy, tools, and limits are specified separately |
 | [MCP security practices](https://modelcontextprotocol.io/docs/2025-11-25/tutorials/security/security_best_practices) | Confused-deputy and token-passthrough concerns |

@@ -38,7 +38,7 @@ binding encodes binary payloads with base64 and preserves integer precision.
 | `daemon_epoch` | Unique opaque identifier changed on daemon restart |
 | `event_id` | Unique within that epoch; stable on redelivery |
 | `session_id`, `flow_id` | Authorized pseudonymous session and connection identifiers |
-| `request_id` | Operation identifier when meaningful; absent for unparsed TCP |
+| `request_id` | Operation identifier when meaningful, including the opening operation of a TCP relay; absent only if none exists |
 | `parent_request_id` | Optional trusted correlation for local tool/subrequest relationships |
 | `stream_id`, `sequence` | Logical directional view and monotonically increasing record number |
 | `time` | UTC observation timestamp; ordering relies on sequence, not wall-clock equality |
@@ -75,6 +75,8 @@ linked to their parent where applicable. Export approved raw TCP bytes with
 direction and order without pretending to parse unknown protocols. Identify
 unmediated remote tool activity as outside coverage; do not invent downstream
 traces that the daemon did not observe.
+The [TCP contract](tcp.md) defines half-close/end handling and inspection
+classification; byte visibility alone does not prove application plaintext.
 
 ## Redaction and streaming
 

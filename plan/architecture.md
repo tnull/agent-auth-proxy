@@ -49,7 +49,7 @@ flowchart LR
         O --> P
     end
     C -->|Session-bound ingress| P
-    P -->|Verified TLS and final authentication| R[Providers and resources]
+    P -->|Admitted transport; TLS for credentials| R[Providers and resources]
     P -->|Redacted ordered streams| E[Observation consumers]
 ```
 
@@ -98,6 +98,12 @@ only its safe response view.
 | TLS for a non-HTTP protocol | Inspection only with compatible TLS endpoints and a supported protocol profile | No assumption that HTTP auth works for that protocol |
 | Pinned TLS / end-to-end encrypted payload | Unsupported for full inspection; reject by default | No assertion of plaintext visibility |
 | WebSocket | Inspect admitted HTTP upgrade and subsequent frames when explicitly supported | Handshake authentication does not authorize every later operation |
+
+The [first TCP relay contract](tcp.md) permits only explicitly enrolled,
+credential-free byte channels. It defines bounded duplex and half-close
+behavior, connection-level approval, and honest unparsed coverage. It cannot
+substitute for HTTP/MCP inspection or authorize individual application actions;
+no failed inspected connection falls back to this relay.
 
 An MCP server's own external traffic is visible only if that server is inside
 the confined deployment or otherwise enrolled behind a mediator. A remote MCP

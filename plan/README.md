@@ -1,6 +1,6 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.4. Updated on 2026-09-22.
+Status: proposed design, version 0.5. Updated on 2026-09-23.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
@@ -21,6 +21,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
 | [MCP adapter](mcp.md) | Pinned local tool binding, bounded HTTP results, asynchronous status/cancellation, and bridge isolation |
 | [Remote MCP](remote-mcp.md) | Upstream session custody, pinned tool policy, bounded JSON/SSE mediation, and no automatic replay |
+| [TCP relay](tcp.md) | Explicit destination grants, duplex lifecycle, connection approval, bounded byte observation, and coverage limits |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
 | [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
 | [Approval](approval.md) | Async human-in-the-loop interface, policy composition, immutable decisions, and fail-closed behavior |

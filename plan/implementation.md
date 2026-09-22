@@ -237,11 +237,18 @@ pure protocol tests first, then engine integration and an actual daemon/TLS
 fixture. Keep trusted remote state in `aap-mcp-upstream`, not the credential-free
 local adapter. Store API-key injection alone does not establish MCP mediation.
 
-For TCP, expose only admitted destinations and honest plaintext/opaque
-classification. HTTP/2 needs independent stream identity and origin checks;
-WebSocket needs explicit frame/operation policy. These later coverage profiles
-are not required to claim the narrower [first proof](proof-of-concept.md), and
-a successful upgrade is never unlimited authorization.
+For TCP, implement the [destination-bound relay contract](tcp.md): first specify
+the versioned local stream binding, then test shared admission/approval and
+duplex/half-close semantics, then prove the actual daemon and sandbox path.
+Keep byte relay separate from inspected CONNECT, with no credential lookup or
+raw fallback after inspection failure. Opening a stream approves a bounded
+connection, not its individual future application actions.
+
+HTTP/2 needs independent stream identity and origin checks; WebSocket needs
+explicit frame/operation policy. These two later coverage profiles are not
+required to claim the narrower [first proof](proof-of-concept.md), whereas its
+declared TCP fixture is required. A successful upgrade is never unlimited
+authorization.
 
 Provide examples for a trusted host embedding the engine with an existing
 store adapter, a host supplying its own `SecretStore`/observation sink, and a

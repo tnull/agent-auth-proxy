@@ -34,6 +34,7 @@ connection.
 | `request.execute` | `request_id`, `resource`, optional `auth_context`, method, target, headers, body | Safe response/stream, pending handle, or error |
 | `request.status` | `request_id` | State and retained safe result metadata; never resubmits |
 | `request.cancel` | `request_id` | Cancellation state; remote execution may already have occurred |
+| `stream.open` | `request_id`, enrolled TCP `resource` | One bounded duplex stream; status/cancel share the common operation namespace |
 | `auth.prepare` | `request_id`, permitted `item_id`, site URI | Fake credentials, context handle, expiry, and profile-selected submission scope |
 | `auth.status` | `auth_context` | Unauthenticated, authenticating, authenticated, expired, or revoked |
 | `auth.logout` | `auth_context` | Local authority invalidated; remote logout outcome separately reported |
@@ -43,6 +44,12 @@ for authenticated HTTP operations. Bodies are exact octets; a tool binding must
 distinguish textual data from encoded binary data without implicit conversion.
 The caller supplies application headers, not authentication or routing authority.
 Profiles declare allowed headers, formats, lengths, and action constraints.
+
+The [TCP contract](tcp.md) separately defines proposed byte-channel admission,
+half-close, and terminal outcomes. It does not reinterpret an HTTP target as
+an unrestricted tunnel. The frozen stream operation describes the connection
+and its limits, not the future application bytes; connection approval is not
+per-action consent. Its versioned local wire binding remains a W7 design gate.
 
 `request_id` is an unpadded base64url encoding of 16 random bytes (22 characters),
 unique within a local session. The proxy remembers its frozen operation and
