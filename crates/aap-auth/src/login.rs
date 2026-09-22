@@ -89,6 +89,17 @@ pub struct ValidatedLogin {
     csrf: Option<(String, String)>,
 }
 impl ValidatedLogin {
+    /// Canonical logical input with credential/CSRF selectors structurally
+    /// redacted. No snapshot or native password is needed to construct it.
+    pub fn observation(&self) -> Result<Bytes> {
+        let mut document = self.document.clone();
+        document.put(&self.username, "[redacted]")?;
+        document.put(&self.password, "[redacted]")?;
+        if let Some((selector, _)) = &self.csrf {
+            document.put(selector, "[redacted]")?;
+        }
+        document.encode()
+    }
     /// Call before resolving the password. This initial adapter virtualizes both
     /// fields; visible-username disclosure requires a separate approved path.
     pub fn parse(
@@ -153,27 +164,31 @@ impl ValidatedLogin {
         if let Some((selector, value)) = self.csrf {
             self.document.put(&selector, &value)?;
         }
-        let bytes = match self.document {
-            Document::Form(fields) => form_urlencoded::Serializer::new(String::new())
+        Ok((self.document.encode()?, redactor))
+    }
+}
+
+#[derive(Clone)]
+enum Document {
+    Form(Vec<(String, String)>),
+    Json(Value),
+}
+impl Document {
+    fn encode(self) -> Result<Bytes> {
+        let bytes = match self {
+            Self::Form(fields) => form_urlencoded::Serializer::new(String::new())
                 .extend_pairs(&fields)
                 .finish()
                 .into_bytes(),
-            Document::Json(value) => {
+            Self::Json(value) => {
                 serde_json::to_vec(&value).map_err(|_| ErrorCode::InternalError)?
             }
         };
         if bytes.len() > MAX_BODY {
             return Err(ErrorCode::LimitExceeded.into());
         }
-        Ok((bytes.into(), redactor))
+        Ok(bytes.into())
     }
-}
-
-enum Document {
-    Form(Vec<(String, String)>),
-    Json(Value),
-}
-impl Document {
     fn take_expected(&mut self, selector: &str, expected: &str) -> Result<()> {
         if selector.is_empty() {
             return Err(ErrorCode::RequestInvalid.into());
@@ -352,6 +367,48 @@ mod tests {
             .into(),
         )
         .unwrap()
+    }
+    #[test]
+    fn observation_removes_encoded_placeholders_before_password_resolution() {
+        for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+            let mut profile = profile(encoding);
+            profile.csrf = Some(CsrfProfile {
+                response_pointer: "/csrf".into(),
+                submit_field: if encoding == LoginEncoding::Form {
+                    "csrf"
+                } else {
+                    "/csrf"
+                }
+                .into(),
+            });
+            let values = Placeholders::new().unwrap();
+            let (csrf, _) = CsrfToken::from_page(
+                profile.csrf.as_ref().unwrap(),
+                br#"{"csrf":"private-csrf"}"#,
+            )
+            .unwrap();
+            let (media, body) = match encoding {
+                LoginEncoding::Form => ("application/x-www-form-urlencoded", format!("user={}&password={}&csrf={}&keep=hello+world%26yes", values.username(), values.password(), csrf.placeholder()).replace("aap_", "%61ap_")),
+                LoginEncoding::Json => ("application/json", serde_json::to_string(&json!({"credentials":{"user":values.username(),"password":values.password()},"csrf":csrf.placeholder(),"keep":[true,42,"hello world&yes"]})).unwrap().replace("aap_", "\\u0061ap_")),
+            };
+            let login =
+                ValidatedLogin::parse(&profile, media, body.as_bytes(), &values, Some(&csrf))
+                    .unwrap();
+            let observation = login
+                .observation()
+                .expect("validated login must have a secret-free structural view");
+            match encoding {
+                LoginEncoding::Form => assert_eq!(observation.as_ref(), b"user=%5Bredacted%5D&password=%5Bredacted%5D&csrf=%5Bredacted%5D&keep=hello+world%26yes"),
+                LoginEncoding::Json => assert_eq!(serde_json::from_slice::<Value>(&observation).unwrap(), json!({"credentials":{"user":"[redacted]","password":"[redacted]"},"csrf":"[redacted]","keep":[true,42,"hello world&yes"]})),
+            }
+            // Observation must not consume or alter the private substitution.
+            let (private, _) = login.substitute(&snapshot()).unwrap();
+            assert!(
+                std::str::from_utf8(&private)
+                    .unwrap()
+                    .contains("private-csrf")
+            );
+        }
     }
     #[test]
     fn form_replaces_only_complete_fields_and_preserves_other_meaning() {

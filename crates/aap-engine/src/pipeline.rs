@@ -1,6 +1,7 @@
+use super::observation::{StreamState, headers, request_headers};
 use super::*;
-use aap_auth::{PreparedKey, Redactor, sanitize_response};
-use aap_observe::{Data, Direction, Event, View};
+use aap_auth::{PreparedKey, sanitize_response};
+use aap_observe::{Data, Decision, Direction, Flow, FlowContext, Protocol, View};
 use aap_policy::{Authentication, Target, requires_approval};
 use aap_secrets::ItemRef;
 use aap_transport::{Endpoint, Limits};
@@ -20,6 +21,17 @@ impl Session {
         if !aap_types::ids::valid_id(&request.request_id, 16) {
             return Err(ErrorCode::RequestInvalid.into());
         }
+        let flow = Flow::new(
+            self.core.host.configuration.recorder.clone(),
+            FlowContext {
+                session_id: self.id().into(),
+                request_id: Some(request.request_id.clone()),
+                parent_request_id: None,
+                policy_version: self.core.host.configuration.catalog.configuration_revision,
+                protocol: Protocol::Http1,
+            },
+            self.core.options.require_observation,
+        )?;
         let operation = {
             let mut operations = self
                 .core
@@ -103,10 +115,15 @@ impl Session {
             active: None,
             finished: false,
             dispatched: false,
-            bytes: 0,
+            observed: Mutex::new(std::array::from_fn(|_| StreamState::default())),
             website: None,
             response_recorded: false,
+            flow,
         };
+        if let Err(error) = guard.record_both(Direction::Outbound, Data::FlowOpen {}) {
+            guard.fail(error.code);
+            return Err(error.for_request(&operation.request.request_id));
+        }
         let deadline = self
             .core
             .expires
@@ -224,6 +241,7 @@ impl Session {
             Data::RequestStart {
                 method: request.method.clone(),
                 target: format!("{}{}", profile.origin, target.path()),
+                headers: request_headers(&request.headers),
             },
         )?;
         let addresses = configuration
@@ -302,6 +320,13 @@ impl Session {
             guard
                 .operation
                 .transition(OperationState::PendingApproval, None)?;
+            guard.record_both(
+                Direction::Outbound,
+                Data::PolicyDecision {
+                    decision: Decision::Pending,
+                    reason: None,
+                },
+            )?;
             let approved = tokio::time::timeout_at(
                 expires,
                 provider.approve(approval, guard.operation.cancelled.clone()),
@@ -326,40 +351,6 @@ impl Session {
         store.revalidate(&reference, &metadata.lease).await?;
         let snapshot = store.resolve(&reference, &metadata.lease).await?;
         let key = PreparedKey::new(&snapshot, prefix)?;
-        let mut redactor = Redactor::new(&[snapshot.field(aap_secrets::Field::ApiKey)?.expose()])?;
-        let mut safe_bytes = 0;
-        for (chunk, end) in body
-            .chunks(32 * 1024)
-            .map(|chunk| (chunk, false))
-            .chain(std::iter::once((&[][..], true)))
-        {
-            let safe = redactor.feed(chunk, end)?;
-            for chunk in safe.chunks(32 * 1024) {
-                guard.record(
-                    Direction::Outbound,
-                    Data::ContentChunk {
-                        offset: safe_bytes,
-                        body_base64: STANDARD.encode(chunk),
-                    },
-                )?;
-                safe_bytes += chunk.len() as u64;
-            }
-        }
-        guard.record(
-            Direction::Outbound,
-            Data::AuthTransition {
-                item_id: item_id.clone(),
-                inserted: true,
-            },
-        )?;
-        guard.record(
-            Direction::Outbound,
-            Data::ContentEnd {
-                complete: true,
-                bytes: safe_bytes,
-                reason: None,
-            },
-        )?;
         let mut outgoing = http::Request::builder()
             .method(request.method.as_str())
             .uri(target.as_str());
@@ -373,6 +364,32 @@ impl Session {
             .body(Bytes::from(body))
             .map_err(|_| ErrorCode::RequestInvalid)?;
         let redactor = key.inject(&mut outgoing, header)?;
+        guard.record_view(
+            Direction::Outbound,
+            View::Upstream,
+            Data::RequestStart {
+                method: request.method.clone(),
+                target: format!("{}{}", profile.origin, target.path()),
+                headers: headers(outgoing.headers()),
+            },
+        )?;
+        let mut outbound = redactor.fresh();
+        for (chunk, end) in outgoing
+            .body()
+            .chunks(32 * 1024)
+            .map(|chunk| (chunk, false))
+            .chain(std::iter::once((&[][..], true)))
+        {
+            guard.content_both(Direction::Outbound, &outbound.feed(chunk, end)?)?;
+        }
+        guard.record_both(
+            Direction::Outbound,
+            Data::AuthTransition {
+                item_id: item_id.clone(),
+                inserted: true,
+            },
+        )?;
+        guard.end_content(Direction::Outbound, &[View::Agent, View::Upstream])?;
         store.revalidate(&reference, &metadata.lease).await?;
         self.check()?;
         if metadata
@@ -381,6 +398,13 @@ impl Session {
         {
             return Err(ErrorCode::VaultUnavailable.into());
         }
+        guard.record_both(
+            Direction::Outbound,
+            Data::PolicyDecision {
+                decision: Decision::Allow,
+                reason: None,
+            },
+        )?;
         guard.operation.transition(OperationState::Ready, None)?;
         guard
             .operation
@@ -401,11 +425,20 @@ impl Session {
                 guard.operation.cancelled.clone(),
             )
             .await?;
+        guard.record_view(
+            Direction::Inbound,
+            View::Upstream,
+            Data::ResponseStart {
+                status: response.status().as_u16(),
+                headers: headers(response.headers()),
+            },
+        )?;
         let response = sanitize_response(response, redactor)?;
         guard.record(
             Direction::Inbound,
             Data::ResponseStart {
                 status: response.status().as_u16(),
+                headers: headers(response.headers()),
             },
         )?;
         guard.operation.transition(
@@ -427,12 +460,13 @@ impl Drop for PendingRetention<'_> {
 }
 
 pub(super) struct Guard {
+    pub flow: Flow,
     session: Session,
     pub operation: Arc<Operation>,
     pub active: Option<OwnedSemaphorePermit>,
     finished: bool,
     pub dispatched: bool,
-    pub bytes: u64,
+    pub observed: Mutex<[StreamState; 4]>,
     pub website: Option<super::website::Exchange>,
     pub response_recorded: bool,
 }
@@ -470,14 +504,7 @@ impl Guard {
             }) {
                 return Err(ErrorCode::OutcomeUnknown.into());
             }
-            self.record(
-                Direction::Inbound,
-                Data::ContentEnd {
-                    complete: true,
-                    bytes: self.bytes,
-                    reason: None,
-                },
-            )?;
+            self.finish_observation(true, None)?;
             if let (Some(context), Some(exchange)) = (&mut context_state, &self.website) {
                 context.status = exchange.final_state;
             }
@@ -485,30 +512,6 @@ impl Guard {
         }
         self.finished = true;
         Ok(())
-    }
-    pub fn record(&self, direction: Direction, data: Data) -> Result<()> {
-        self.session.core.host.configuration.recorder.record(
-            Event {
-                session_id: self.session.id().into(),
-                request_id: self.operation.request.request_id.clone(),
-                stream_id: match direction {
-                    Direction::Outbound => "request",
-                    Direction::Inbound => "response",
-                }
-                .into(),
-                policy_version: self
-                    .session
-                    .core
-                    .host
-                    .configuration
-                    .catalog
-                    .configuration_revision,
-                direction,
-                view: View::Agent,
-                data,
-            },
-            self.session.core.options.require_observation,
-        )
     }
     fn fail(&mut self, reason: ErrorCode) {
         if self.finished {
@@ -526,14 +529,16 @@ impl Guard {
         };
         let _ = self.operation.transition(state, None);
         self.operation.cancelled.cancel();
-        let _ = self.record(
-            Direction::Inbound,
-            Data::ContentEnd {
-                complete: false,
-                bytes: self.bytes,
-                reason: Some(reason),
-            },
-        );
+        if !self.dispatched {
+            let _ = self.record_both(
+                Direction::Outbound,
+                Data::PolicyDecision {
+                    decision: Decision::Deny,
+                    reason: Some(reason),
+                },
+            );
+        }
+        let _ = self.finish_observation(false, Some(reason));
         self.finished = true;
     }
 }
@@ -573,18 +578,10 @@ impl BodyTrait for TrackedBody {
             Poll::Ready(Some(Ok(frame))) => {
                 if let Some(bytes) = frame.data_ref()
                     && !this.guard.response_recorded
+                    && let Err(error) = this.guard.content_both(Direction::Inbound, bytes)
                 {
-                    if let Err(error) = this.guard.record(
-                        Direction::Inbound,
-                        Data::ContentChunk {
-                            offset: this.guard.bytes,
-                            body_base64: STANDARD.encode(bytes),
-                        },
-                    ) {
-                        this.guard.fail(error.code);
-                        return Poll::Ready(Some(Err(error)));
-                    }
-                    this.guard.bytes += bytes.len() as u64;
+                    this.guard.fail(error.code);
+                    return Poll::Ready(Some(Err(error)));
                 }
                 Poll::Ready(Some(Ok(frame)))
             }

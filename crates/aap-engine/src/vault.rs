@@ -364,20 +364,26 @@ impl Session {
             .clone()
             .try_acquire_owned()
             .map_err(|_| ErrorCode::LimitExceeded)?;
-        configuration.recorder.record(
-            aap_observe::Event {
+        aap_observe::Flow::new(
+            configuration.recorder.clone(),
+            aap_observe::FlowContext {
                 session_id: self.id().into(),
-                request_id: request.request_id.clone(),
-                stream_id: "vault".into(),
+                request_id: Some(request.request_id.clone()),
+                parent_request_id: None,
                 policy_version: configuration.catalog.configuration_revision,
-                direction: aap_observe::Direction::Outbound,
-                view: aap_observe::View::Agent,
-                data: aap_observe::Data::AuthTransition {
-                    item_id: item.item_id.clone(),
-                    inserted: false,
-                },
+                protocol: aap_observe::Protocol::Control,
             },
             self.core.options.require_observation,
+        )?
+        .record(
+            aap_observe::Direction::Outbound,
+            aap_observe::View::Agent,
+            aap_observe::Inspection::MetadataOnly,
+            aap_observe::Redaction::Complete,
+            aap_observe::Data::AuthTransition {
+                item_id: item.item_id.clone(),
+                inserted: false,
+            },
         )?;
         let store = configuration
             .stores

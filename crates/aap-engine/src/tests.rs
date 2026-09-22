@@ -227,6 +227,7 @@ fn options() -> SessionOptions {
     }
 }
 
+mod observation;
 mod proxy;
 mod vault;
 mod website;

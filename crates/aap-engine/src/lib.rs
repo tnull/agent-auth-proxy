@@ -17,6 +17,7 @@ use tokio::{
     time::Instant,
 };
 
+mod observation;
 mod pipeline;
 mod proxy;
 mod vault;

@@ -23,8 +23,10 @@ daemon form-login test using fake credentials and private cookies. The
 [credential-free MCP bridge](docs/mcp.md) now exposes the vault and bounded
 request tools, with real-process form/JSON website tests. Optional
 [CONNECT/TLS inspection](docs/connect.md) also brokers provider and website
-requests through the session socket. Remote MCP, TCP, complete observation,
-and confinement demonstrations remain pending.
+requests through the session socket. [HTTP observation](docs/observation.md)
+now correlates sanitized agent/upstream views, ordered content, and logical
+request endings. Remote MCP, TCP, scoped observation consumers, complete
+connection coverage, and confinement demonstrations remain pending.
 
 ## Development
 

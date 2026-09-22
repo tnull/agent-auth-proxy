@@ -5,11 +5,10 @@ use aap_auth::{
     login::{CsrfToken, ValidatedLogin, reserved},
     sanitize_response,
 };
-use aap_observe::{Data, Direction};
+use aap_observe::{Data, Decision, Direction, View};
 use aap_policy::{Authentication, Target, requires_approval};
 use aap_secrets::ItemRef;
 use aap_transport::{Endpoint, Limits};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, Limited};
 use std::time::SystemTime;
@@ -175,6 +174,7 @@ impl Session {
             Data::RequestStart {
                 method: input.method.clone(),
                 target: format!("{}{}", profile.origin, target.path()),
+                headers: super::observation::request_headers(&input.headers),
             },
         )?;
         let addresses = configuration
@@ -215,6 +215,10 @@ impl Session {
                 .try_acquire_owned()
                 .map_err(|_| ErrorCode::LimitExceeded)?,
         );
+        let agent_body = match &parsed {
+            Some(parsed) => parsed.observation()?,
+            None => Bytes::copy_from_slice(&body),
+        };
         let body = if let Some(parsed) = parsed {
             self.login_attempt(&binding.item.item_id)?;
             let store = configuration
@@ -230,30 +234,17 @@ impl Session {
         } else {
             Bytes::from(body)
         };
-        let (cookie, mut outbound_redactor) = {
+        let (cookie, outbound_template) = {
             let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
-            (
-                state.jar.header(target, SystemTime::now())?,
-                state.template.fresh(),
-            )
+            let values = state.values.as_ref().ok_or(ErrorCode::PlaceholderInvalid)?;
+            let mut placeholders = vec![values.username().as_bytes(), values.password().as_bytes()];
+            if let Some(csrf) = &state.csrf {
+                placeholders.push(csrf.placeholder().as_bytes());
+            }
+            let template = state.template.merged(&Redactor::new(&placeholders)?)?;
+            (state.jar.header(target, SystemTime::now())?, template)
         };
-        let safe = redact(&mut outbound_redactor, &body)?;
-        record_content(guard, Direction::Outbound, &safe)?;
-        guard.record(
-            Direction::Outbound,
-            Data::AuthTransition {
-                item_id: binding.item.item_id.clone(),
-                inserted: is_login || cookie.is_some(),
-            },
-        )?;
-        guard.record(
-            Direction::Outbound,
-            Data::ContentEnd {
-                complete: true,
-                bytes: safe.len() as u64,
-                reason: None,
-            },
-        )?;
+        let inserted = is_login || cookie.is_some();
         let mut outgoing = http::Request::builder()
             .method(input.method.as_str())
             .uri(target.as_str());
@@ -264,7 +255,41 @@ impl Session {
             outgoing = outgoing.header("cookie", cookie);
         }
         let outgoing = outgoing.body(body).map_err(|_| ErrorCode::RequestInvalid)?;
+        guard.record_view(
+            Direction::Outbound,
+            View::Upstream,
+            Data::RequestStart {
+                method: input.method.clone(),
+                target: format!("{}{}", profile.origin, target.path()),
+                headers: super::observation::headers(outgoing.headers()),
+            },
+        )?;
+        guard.content(
+            Direction::Outbound,
+            View::Agent,
+            &redact(&mut outbound_template.fresh(), &agent_body)?,
+        )?;
+        guard.content(
+            Direction::Outbound,
+            View::Upstream,
+            &redact(&mut outbound_template.fresh(), outgoing.body())?,
+        )?;
+        guard.record_both(
+            Direction::Outbound,
+            Data::AuthTransition {
+                item_id: binding.item.item_id.clone(),
+                inserted,
+            },
+        )?;
+        guard.end_content(Direction::Outbound, &[View::Agent, View::Upstream])?;
         self.revalidate_binding(&binding).await?;
+        guard.record_both(
+            Direction::Outbound,
+            Data::PolicyDecision {
+                decision: Decision::Allow,
+                reason: None,
+            },
+        )?;
         guard.operation.transition(OperationState::Ready, None)?;
         guard
             .operation
@@ -285,6 +310,14 @@ impl Session {
             )
             .await?;
         let (mut parts, body) = response.into_parts();
+        guard.record_view(
+            Direction::Inbound,
+            View::Upstream,
+            Data::ResponseStart {
+                status: parts.status.as_u16(),
+                headers: super::observation::headers(&parts.headers),
+            },
+        )?;
         if parts.headers.get_all("content-type").iter().count() != 1
             || parts
                 .headers
@@ -305,6 +338,7 @@ impl Session {
             return Err(ErrorCode::InspectionUnavailable.into());
         }
         let mut bytes = collected.to_bytes();
+        let upstream_bytes = bytes.clone();
         self.revalidate_binding(&binding).await?;
         let (template, observer) = {
             let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
@@ -368,6 +402,7 @@ impl Session {
             }
             (state.template.fresh(), Redactor::new(&private)?)
         };
+        let upstream_observed = redact(&mut template.merged(&observer)?, &upstream_bytes)?;
         let private_response = http::Response::from_parts(
             parts,
             Full::new(bytes)
@@ -400,9 +435,11 @@ impl Session {
             Direction::Inbound,
             Data::ResponseStart {
                 status: parts.status.as_u16(),
+                headers: super::observation::headers(&parts.headers),
             },
         )?;
-        guard.bytes = record_content(guard, Direction::Inbound, &observed)?;
+        guard.content(Direction::Inbound, View::Upstream, &upstream_observed)?;
+        guard.content(Direction::Inbound, View::Agent, &observed)?;
         guard.response_recorded = true;
         guard
             .operation
@@ -467,6 +504,13 @@ impl Session {
         guard
             .operation
             .transition(OperationState::PendingApproval, None)?;
+        guard.record_both(
+            Direction::Outbound,
+            Data::PolicyDecision {
+                decision: Decision::Pending,
+                reason: None,
+            },
+        )?;
         if !tokio::time::timeout_at(
             expires,
             provider.approve(request, guard.operation.cancelled.clone()),
@@ -517,18 +561,4 @@ fn redact(redactor: &mut Redactor, body: &[u8]) -> Result<Vec<u8>> {
         }
     }
     Ok(output)
-}
-fn record_content(guard: &Guard, direction: Direction, bytes: &[u8]) -> Result<u64> {
-    let mut offset = 0;
-    for chunk in bytes.chunks(32 * 1024) {
-        guard.record(
-            direction,
-            Data::ContentChunk {
-                offset,
-                body_base64: STANDARD.encode(chunk),
-            },
-        )?;
-        offset += chunk.len() as u64;
-    }
-    Ok(offset)
 }

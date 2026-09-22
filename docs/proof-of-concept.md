@@ -431,3 +431,35 @@ store-maintenance evidence, and macOS custody still need completion.
 All 110 unit tests, ten process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. Workspace checks pass on both; formatting, Clippy, and
 public documentation pass on 1.95.0. This feature adds no dependencies.
+
+## Correlated logical HTTP observation
+
+HTTP operations now carry random flow identities, four independently ordered
+directional views, protocol/inspection/redaction classifications, structured
+safe headers, policy decisions, logical flow endings, and sanitized byte totals.
+Website views distinguish structural placeholder redaction from private
+substitution, cookie capture, and CSRF virtualization. Request selectors are
+redacted after parsing, so alternative form/JSON placeholder encodings do not
+evade that transformation. Provider streams emit paired agent/upstream records.
+
+The recorder accepts bounded batches atomically. Required-mode capacity failure
+cannot retain half a paired chunk or a successful ending for just one view.
+Concurrent flow clones serialize sequence assignment with acceptance; failed
+recording still consumes identities so losses remain detectable. Abandoned
+responses report incomplete views rather than a spurious policy denial.
+
+Flow ordering, atomic acceptance, provider/website views, encoded-placeholder
+redaction, and failure-reporting tests were observed failing before their
+respective changes, then passing. Header-withholding coverage additionally
+checks that unknown names cannot become a metadata leak. The pre-existing
+byte-budget test still requires exactly one escaped record per page; its page
+budget now accounts for the larger serialized envelope.
+
+See [the actual observation binding](observation.md). Logical flow allocation
+is not a TCP/TLS establishment event. Scoped consumers, physical connection
+coverage, remote MCP/TCP, cross-protocol placeholders, and the remaining W7/W8
+acceptance work remain open. This slice adds no dependencies.
+
+All 120 unit tests, ten process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
+warning-free Clippy, and warning-free public documentation pass on 1.95.0.

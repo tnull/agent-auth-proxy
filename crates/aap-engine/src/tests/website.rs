@@ -226,6 +226,89 @@ fn login_body(login: &Login, csrf: &str, encoding: LoginEncoding) -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn website_observation_distinguishes_substitution_and_private_cookie_capture() {
+    use aap_observe::{Data, Direction, View};
+    let mut fixture = Fixture::new().await;
+    fixture.origin = website_origin(LoginEncoding::Form, true).await;
+    let broker = Broker::new(website_configuration(&fixture, LoginEncoding::Form).await).unwrap();
+    let session = broker.create_session(options()).unwrap();
+    let login = session.get_login(issuance(&fixture)).await.unwrap();
+    let csrf = page(&fixture, &session, &login).await;
+    let original = login_body(&login, &csrf, LoginEncoding::Form);
+    let encoded = String::from_utf8(original)
+        .unwrap()
+        .replace("aap_", "%61ap_");
+    let input = request(&fixture, &login, "POST", "/session", encoded.as_bytes());
+    let id = input.request_id.clone();
+    session
+        .execute(input)
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap();
+    let records: Vec<_> = fixture
+        .recorder
+        .read(None, 256)
+        .unwrap()
+        .records
+        .into_iter()
+        .filter(|record| record.event.request_id.as_deref() == Some(&id))
+        .collect();
+    let agent = super::observation::content(&records, Direction::Outbound, View::Agent);
+    let upstream = super::observation::content(&records, Direction::Outbound, View::Upstream);
+    assert_eq!(
+        String::from_utf8(agent).unwrap(),
+        "user=%5Bredacted%5D&password=%5Bredacted%5D&csrf=%5Bredacted%5D"
+    );
+    assert_eq!(
+        String::from_utf8(upstream).unwrap(),
+        "user=[redacted]&password=[redacted]&csrf=[redacted]"
+    );
+    for view in [View::Agent, View::Upstream] {
+        let bytes = super::observation::content(&records, Direction::Inbound, view);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap()["echo"],
+            "[redacted] [redacted] [redacted] [redacted]"
+        );
+        let response = records
+            .iter()
+            .find(|record| {
+                record.event.view == view && matches!(record.event.data, Data::ResponseStart { .. })
+            })
+            .unwrap();
+        let value = serde_json::to_value(&response.event.data).unwrap();
+        assert_eq!(
+            value["headers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|pair| pair[0] == "set-cookie"),
+            view == View::Upstream
+        );
+    }
+    for record in &records {
+        if let Data::ContentChunk { body_base64, .. } = &record.event.data {
+            let decoded = String::from_utf8(STANDARD.decode(body_base64).unwrap()).unwrap();
+            for secret in [
+                "private-password",
+                "private-user",
+                "private-session",
+                "private-pre",
+                "private-csrf",
+                "aap_pw1_",
+                "aap_un1_",
+                "aap_cs1_",
+                "%61ap_",
+            ] {
+                assert!(!decoded.contains(secret), "observation leaked {secret}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn fake_form_and_json_logins_reach_protected_pages_without_exposing_secrets() {
     for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
         let mut fixture = Fixture::new().await;

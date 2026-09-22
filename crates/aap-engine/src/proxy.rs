@@ -43,19 +43,25 @@ impl Session {
         {
             return Err(ErrorCode::PolicyDenied.into());
         }
-        configuration.recorder.record(
-            aap_observe::Event {
+        aap_observe::Flow::new(
+            configuration.recorder.clone(),
+            aap_observe::FlowContext {
                 session_id: self.id().into(),
-                request_id: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
-                stream_id: "connect-admission".into(),
+                request_id: None,
+                parent_request_id: None,
                 policy_version: configuration.catalog.configuration_revision,
-                direction: aap_observe::Direction::Outbound,
-                view: aap_observe::View::Agent,
-                data: aap_observe::Data::ConnectAdmission {
-                    authority: authority.authority(),
-                },
+                protocol: aap_observe::Protocol::Tls,
             },
             self.core.options.require_observation,
+        )?
+        .record(
+            aap_observe::Direction::Outbound,
+            aap_observe::View::Agent,
+            aap_observe::Inspection::MetadataOnly,
+            aap_observe::Redaction::Complete,
+            aap_observe::Data::ConnectAdmission {
+                authority: authority.authority(),
+            },
         )?;
         Ok(())
     }

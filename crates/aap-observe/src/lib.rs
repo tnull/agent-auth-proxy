@@ -7,23 +7,32 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod flow;
+pub use flow::{Emission, Flow, FlowContext, Inspection, Protocol, Redaction};
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
     pub session_id: String,
-    pub request_id: String,
+    pub request_id: Option<String>,
+    pub parent_request_id: Option<String>,
+    pub flow_id: String,
     pub stream_id: String,
+    pub sequence: u64,
+    pub protocol: Protocol,
+    pub inspection: Inspection,
+    pub redaction: Redaction,
     pub policy_version: u64,
     pub direction: Direction,
     pub view: View,
     pub data: Data,
 }
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     Outbound,
     Inbound,
 }
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum View {
     Agent,
@@ -32,19 +41,35 @@ pub enum View {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", rename_all = "snake_case")]
 pub enum Data {
+    /// Logical flow allocation, not evidence that an upstream socket connected.
+    FlowOpen {},
+    FlowClose {
+        complete: bool,
+        outbound_bytes: u64,
+        inbound_bytes: u64,
+        reason: Option<ErrorCode>,
+    },
+    PolicyDecision {
+        decision: Decision,
+        reason: Option<ErrorCode>,
+    },
     ConnectAdmission {
         authority: String,
     },
     RequestStart {
         method: String,
         target: String,
+        headers: Vec<(String, String)>,
     },
     ResponseStart {
         status: u16,
+        headers: Vec<(String, String)>,
     },
     ContentChunk {
         offset: u64,
         body_base64: String,
+        media_type: Option<String>,
+        encoding: String,
     },
     ContentEnd {
         complete: bool,
@@ -55,6 +80,13 @@ pub enum Data {
         item_id: String,
         inserted: bool,
     },
+}
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Decision {
+    Allow,
+    Deny,
+    Pending,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Record {
@@ -117,73 +149,117 @@ impl Recorder {
         })
     }
     pub fn record(&self, event: Event, required: bool) -> Result<()> {
+        self.record_batch(vec![event], required)
+    }
+    /// Accept at most sixteen records / 256 KiB as one logical update.
+    /// Failed acceptance consumes IDs, but never retains a partial update.
+    pub fn record_batch(&self, events: Vec<Event>, required: bool) -> Result<()> {
+        if events.is_empty() || events.len() > 16 {
+            return Err(ErrorCode::RequestInvalid.into());
+        }
         let mut state = self
             .state
             .lock()
             .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        let id = state.next;
-        state.next = state
-            .next
-            .checked_add(1)
+        let first = state.next;
+        state.next = first
+            .checked_add(events.len() as u64)
             .ok_or(ErrorCode::ObservationUnavailable)?;
-        let size_hint = event.session_id.len()
-            + event.request_id.len()
-            + event.stream_id.len()
-            + match &event.data {
-                Data::ConnectAdmission { authority } => authority.len(),
-                Data::ContentChunk { body_base64, .. } => body_base64.len(),
-                Data::RequestStart { method, target } => method.len() + target.len(),
-                Data::AuthTransition { item_id, .. } => item_id.len(),
-                _ => 0,
-            };
-        if !state.available || size_hint > 128 * 1024 {
-            return if required {
-                Err(ErrorCode::ObservationUnavailable.into())
-            } else {
-                Ok(())
-            };
-        }
-        let record = Record {
-            schema_version: 1,
-            daemon_epoch: state.epoch.clone(),
-            event_id: id,
-            time_unix_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| ErrorCode::ObservationUnavailable)?
-                .as_millis()
-                .try_into()
-                .map_err(|_| ErrorCode::ObservationUnavailable)?,
-            event,
-        };
-        let bytes = serde_json::to_vec(&record)
-            .map_err(|_| ErrorCode::ObservationUnavailable)?
-            .len();
-        if bytes > state.max_bytes {
-            return if required {
-                Err(ErrorCode::ObservationUnavailable.into())
-            } else {
-                Ok(())
-            };
-        }
-        while state.records.len() >= state.max_events || state.bytes + bytes > state.max_bytes {
+        let unavailable = || {
             if required {
-                return Err(ErrorCode::ObservationUnavailable.into());
-            }
-            if state
-                .records
-                .front()
-                .is_some_and(|(_, _, protected)| *protected)
-            {
-                return Ok(());
-            }
-            if let Some((_, removed, _)) = state.records.pop_front() {
-                state.bytes -= removed;
+                Err(ErrorCode::ObservationUnavailable.into())
             } else {
-                break;
+                Ok(())
             }
+        };
+        if !state.available || events.len() > state.max_events {
+            return unavailable();
         }
-        state.bytes += bytes;
-        state.records.push_back((record, bytes, required));
+        let time_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| ErrorCode::ObservationUnavailable)?
+            .as_millis()
+            .try_into()
+            .map_err(|_| ErrorCode::ObservationUnavailable)?;
+        let mut additions = Vec::with_capacity(events.len());
+        let mut added_bytes = 0;
+        for (index, event) in events.into_iter().enumerate() {
+            let size_hint = event.session_id.len()
+                + event.request_id.as_ref().map_or(0, String::len)
+                + event.parent_request_id.as_ref().map_or(0, String::len)
+                + event.flow_id.len()
+                + event.stream_id.len()
+                + match &event.data {
+                    Data::ConnectAdmission { authority } => authority.len(),
+                    Data::ContentChunk {
+                        body_base64,
+                        media_type,
+                        encoding,
+                        ..
+                    } => {
+                        body_base64.len()
+                            + media_type.as_ref().map_or(0, String::len)
+                            + encoding.len()
+                    }
+                    Data::RequestStart {
+                        method,
+                        target,
+                        headers,
+                    } => {
+                        method.len()
+                            + target.len()
+                            + headers
+                                .iter()
+                                .map(|(name, value)| name.len() + value.len())
+                                .sum::<usize>()
+                    }
+                    Data::ResponseStart { headers, .. } => headers
+                        .iter()
+                        .map(|(name, value)| name.len() + value.len())
+                        .sum(),
+                    Data::AuthTransition { item_id, .. } => item_id.len(),
+                    _ => 0,
+                };
+            if size_hint > 128 * 1024 {
+                return unavailable();
+            }
+            let record = Record {
+                schema_version: 1,
+                daemon_epoch: state.epoch.clone(),
+                event_id: first + index as u64,
+                time_unix_ms,
+                event,
+            };
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|_| ErrorCode::ObservationUnavailable)?
+                .len();
+            added_bytes += bytes;
+            if bytes > 128 * 1024 || added_bytes > 256 * 1024 || added_bytes > state.max_bytes {
+                return unavailable();
+            }
+            additions.push((record, bytes, required));
+        }
+        let mut removed_count = 0;
+        let mut removed_bytes = 0;
+        while state.records.len() - removed_count + additions.len() > state.max_events
+            || state.bytes - removed_bytes + added_bytes > state.max_bytes
+        {
+            if required {
+                return unavailable();
+            }
+            let Some((_, bytes, protected)) = state.records.get(removed_count) else {
+                return unavailable();
+            };
+            if *protected {
+                return unavailable();
+            }
+            removed_bytes += bytes;
+            removed_count += 1;
+        }
+        // Capacity is decided before mutation, including best-effort eviction.
+        state.records.drain(..removed_count);
+        state.bytes = state.bytes - removed_bytes + added_bytes;
+        state.records.extend(additions);
         Ok(())
     }
     pub fn read(&self, cursor: Option<&Cursor>, limit: usize) -> Result<Batch> {
@@ -284,12 +360,21 @@ mod tests {
     fn event() -> Event {
         Event {
             session_id: aap_types::ids::random_id(16).unwrap(),
-            request_id: aap_types::ids::random_id(16).unwrap(),
+            request_id: Some(aap_types::ids::random_id(16).unwrap()),
+            parent_request_id: None,
+            flow_id: aap_types::ids::random_id(16).unwrap(),
+            sequence: 0,
+            protocol: Protocol::Http1,
+            inspection: Inspection::Parsed,
+            redaction: Redaction::Transformed,
             stream_id: "response".into(),
             policy_version: 1,
             direction: Direction::Inbound,
             view: View::Agent,
-            data: Data::ResponseStart { status: 200 },
+            data: Data::ResponseStart {
+                status: 200,
+                headers: vec![],
+            },
         }
     }
     #[test]
@@ -301,16 +386,26 @@ mod tests {
             input.data = Data::RequestStart {
                 method: "GET".into(),
                 target: "\u{0001}".repeat(180),
+                headers: vec![],
             };
             recorder.record(input, true).unwrap();
         }
+        // Include the extended flow envelope without weakening the one-record
+        // page assertion: size a page for exactly one serialized record.
+        let budget = 512
+            + serde_json::to_vec(&recorder.read(None, 1).unwrap().records[0])
+                .unwrap()
+                .len()
+            + 1;
         let first = recorder
-            .read_bounded(None, 8, 2048)
+            .read_bounded(None, 8, budget)
             .expect("bounded page must fit one record");
         assert_eq!(first.records.len(), 1);
         assert_eq!(first.cursor.after, 1);
-        assert!(serde_json::to_vec(&first).unwrap().len() <= 2048);
-        let second = recorder.read_bounded(Some(&first.cursor), 8, 2048).unwrap();
+        assert!(serde_json::to_vec(&first).unwrap().len() <= budget);
+        let second = recorder
+            .read_bounded(Some(&first.cursor), 8, budget)
+            .unwrap();
         assert_eq!(second.records[0].event_id, 2);
         assert!(second.gap.is_none());
         assert!(
@@ -320,12 +415,12 @@ mod tests {
             matches!(recorder.read_bounded(None, 8, 0), Err(error) if error.code == ErrorCode::RequestInvalid)
         );
         let remaining = recorder
-            .read_bounded(Some(&second.cursor), 1, 2048)
+            .read_bounded(Some(&second.cursor), 1, budget)
             .unwrap();
         assert_eq!(remaining.records.len(), 1);
         assert_eq!(remaining.records[0].event_id, 3);
         let last = recorder
-            .read_bounded(Some(&remaining.cursor), 8, 2048)
+            .read_bounded(Some(&remaining.cursor), 8, budget)
             .unwrap();
         assert_eq!(last.records[0].event_id, 4);
         assert!(
@@ -402,6 +497,50 @@ mod tests {
                 last: 2,
                 previous_epoch: false
             }
+        );
+    }
+
+    #[test]
+    fn paired_records_are_all_or_nothing_and_loss_preserves_event_identity() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        recorder
+            .record_batch(vec![event(), event()], true)
+            .expect("paired records were refused");
+        let batch = recorder.read(None, 10).unwrap();
+        assert_eq!(batch.records.len(), 2);
+        recorder
+            .acknowledge(&Cursor {
+                epoch: batch.cursor.epoch.clone(),
+                after: 1,
+            })
+            .unwrap();
+        assert!(recorder.record_batch(vec![event(), event()], true).is_err());
+        let remaining = recorder.read(None, 10).unwrap();
+        assert_eq!(remaining.records.len(), 1);
+        assert_eq!(remaining.records[0].event_id, 2);
+        recorder.acknowledge(&batch.cursor).unwrap();
+        recorder.record_batch(vec![event(), event()], true).unwrap();
+        let next = recorder.read(Some(&batch.cursor), 10).unwrap();
+        assert_eq!(
+            next.gap.unwrap(),
+            Gap {
+                first: 3,
+                last: 4,
+                previous_epoch: false
+            }
+        );
+        assert_eq!(
+            next.records
+                .iter()
+                .map(|record| record.event_id)
+                .collect::<Vec<_>>(),
+            vec![5, 6]
+        );
+        assert!(recorder.record_batch(vec![], true).is_err());
+        assert!(
+            recorder
+                .record_batch((0..17).map(|_| event()).collect(), true)
+                .is_err()
         );
     }
 }
