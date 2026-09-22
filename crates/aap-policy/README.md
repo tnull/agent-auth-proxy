@@ -8,6 +8,14 @@ method, path, and query rules, bounded bodies, and explicit application-header
 allowlists. Form profiles additionally bind login/CSRF fields and application
 success evidence. Approval requirements compose restrictively.
 
+`Authentication::Mcp` enrolls one query-free POST endpoint, an optional DELETE
+on that same path, one catalog credential, and finite reviewed tool contracts.
+It rejects streaming/unbounded routes and caller session/resumption headers.
+Catalog validation forbids raw-profile overlap at that origin/path and reuse
+of the same enrolled native credential reference through a non-MCP profile.
+Distinct MCP account bindings remain supported. These are configuration checks,
+not evidence that a caller or engine has implemented remote MCP dispatch.
+
 `AddressPolicy::permits_all` checks a complete DNS result. The caller must then
 dial one of those admitted addresses without re-resolution, retain the approved
 TLS name, and enforce session/grant/revocation checks. This crate does not bind

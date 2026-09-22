@@ -1,7 +1,7 @@
 # Remote MCP mediation
 
-Status: W7 target contract; standalone message validation and private context
-state are implemented, but engine/daemon integration is pending. See
+Status: W7 target contract; enrollment validation, standalone message handling,
+and private context state are implemented, but engine/daemon integration is pending. See
 [implementation evidence](../docs/proof-of-concept.md#remote-mcp-message-boundary).
 This complements the
 [local MCP tools](mcp.md); it does not replace their seven-tool interface or
@@ -40,6 +40,13 @@ policy, credential item, permitted methods, tool names, reviewed argument/result
 contracts, approval rules, and limits. Reject query-bearing endpoints for this
 first profile. Enrollment must not overlap a generic pass-through route that
 could bypass MCP message validation using the same credential.
+
+The first catalog validator also disallows non-MCP profiles at the same
+origin/path, regardless of method/query, and sharing an enrolled store/key
+reference between MCP and non-MCP bindings. Do not infer secret equality across
+different records or adapter aliases; deliberate duplicate enrollment remains
+an operator responsibility. Non-secret tool contracts live in `aap-types` so
+configuration validation does not import the trusted remote adapter or SDK.
 
 Use the existing `request.execute` operation to carry bounded MCP HTTP requests;
 inspected HTTP ingress must reach the same engine path. The local seven-tool

@@ -1,5 +1,5 @@
 //! Trusted remote MCP message/session boundary, without transport or store access.
-use serde::{Deserialize, Serialize};
+pub use aap_types::mcp::{Argument, MAX_REQUEST, MAX_RESPONSE, Tool, VERSION};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -11,25 +11,6 @@ mod sse;
 mod wire;
 pub use context::{Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse, State};
 pub use sse::SseDecoder;
-
-pub const VERSION: &str = "2025-11-25";
-pub const MAX_REQUEST: usize = 256 * 1024;
-pub const MAX_RESPONSE: usize = 1024 * 1024;
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Tool {
-    pub name: String,
-    pub description: String,
-    pub arguments: BTreeMap<String, Argument>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Argument {
-    Text { max_length: u32 },
-    Integer { minimum: i64, maximum: i64 },
-}
 
 /// Compiled operator policy. This does not grant a caller permission to use it.
 pub struct Profile {

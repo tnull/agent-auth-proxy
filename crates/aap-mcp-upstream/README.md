@@ -17,6 +17,10 @@ these pure protocol tests alone. This crate starts no runtime or connector and
 does not retrieve credentials or launch background work. SDK types remain
 private to its implementation.
 
+`Tool` and `Argument` are re-exports of the credential-free reviewed contract
+in `aap-types::mcp`. Enrollment and this adapter use the same finite validation;
+policy configuration does not need to import the MCP SDK or this custody crate.
+
 Tool profiles permit required bounded text and integer fields only. Text
 limits count Unicode scalar values; encoded request limits apply separately.
 Upstream schemas must match the enrolled structure exactly, not merely claim

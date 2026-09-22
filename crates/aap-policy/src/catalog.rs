@@ -93,6 +93,12 @@ pub enum Authentication {
     Form {
         login: LoginProfile,
     },
+    Mcp {
+        item_id: String,
+        header: String,
+        prefix: String,
+        tools: Vec<aap_types::mcp::Tool>,
+    },
 }
 
 impl Catalog {
@@ -143,7 +149,8 @@ impl Catalog {
             }
         }
         for profile in profiles {
-            if let Authentication::ApiKey { item_id, .. } = &profile.auth
+            if let Authentication::ApiKey { item_id, .. } | Authentication::Mcp { item_id, .. } =
+                &profile.auth
                 && !self
                     .items
                     .iter()
@@ -152,6 +159,7 @@ impl Catalog {
                 return Err(invalid());
             }
         }
+        self.validate_mcp_bindings(profiles)?;
         Ok(())
     }
 }
@@ -229,6 +237,8 @@ pub(crate) fn routing_header(name: &str) -> bool {
                 | "via"
                 | "origin"
                 | "referer"
+                | "mcp-session-id"
+                | "last-event-id"
         )
 }
 

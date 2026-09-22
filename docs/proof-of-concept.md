@@ -612,3 +612,31 @@ the other previously listed proof-of-concept gates remain outstanding.
 All 156 unit tests, twelve process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
 warning-free Clippy, and warning-free public documentation pass on 1.95.0.
+
+## Remote MCP enrollment policy
+
+Private resource configuration now recognizes `Authentication::Mcp`: one exact
+query-free POST endpoint, optional same-path DELETE, a catalog-bound credential
+item/header, and finite reviewed tool contracts. Enrollment rejects streaming,
+oversized limits, unsupported caller headers, transport-header credential
+collisions, missing item bindings, and incompatible tool schemas. Private
+session/resumption headers cannot be enrolled as caller fields on any route.
+
+The catalog rejects non-MCP routes at the same origin/path and use of an
+MCP-enrolled store/key reference through a non-MCP profile. Separate MCP account
+bindings remain permitted. This compares private references, not passwords or
+their hashes; an operator's deliberate duplicate values in different records
+or store aliases cannot be inferred by this check.
+
+The non-secret tool/argument types and validation moved to `aap-types::mcp`,
+re-exported by the trusted adapter. Configuration and protocol compilation use
+the same schema/size rules without a policy-to-custody dependency cycle or an
+MCP SDK in the client dependency closure. No external package was added; the
+remote adapter's now-unused direct `serde` dependency was removed.
+
+All five enrollment tests were observed failing before production changes.
+They now pass alongside the existing message/context tests. Workspace checks
+and 161 unit tests, twelve process tests, and one compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0; stable formatting, warning-free Clippy, and warning-free
+documentation pass. The engine still rejects MCP dispatch as unsupported:
+these configuration checks do not yet establish real remote MCP mediation.

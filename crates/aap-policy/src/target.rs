@@ -199,6 +199,12 @@ impl ResourceProfile {
                 header,
                 prefix,
                 ..
+            }
+            | Authentication::Mcp {
+                item_id,
+                header,
+                prefix,
+                ..
             } => {
                 let parsed =
                     http::HeaderName::from_bytes(header.as_bytes()).map_err(|_| invalid())?;
@@ -286,6 +292,9 @@ impl ResourceProfile {
                     return Err(invalid());
                 }
             }
+        }
+        if let Authentication::Mcp { tools, header, .. } = &self.auth {
+            self.validate_mcp(tools, header)?;
         }
         Ok(())
     }

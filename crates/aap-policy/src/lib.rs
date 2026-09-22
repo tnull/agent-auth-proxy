@@ -3,9 +3,13 @@
 use std::net::IpAddr;
 
 pub mod catalog;
+mod mcp;
 pub mod target;
 pub use catalog::*;
 pub use target::Target;
+
+#[cfg(test)]
+mod mcp_tests;
 
 /// Public unicast destinations only; special destinations need exact enrollment.
 pub fn is_public_address(address: IpAddr) -> bool {
