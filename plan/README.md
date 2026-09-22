@@ -19,6 +19,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Common protocol](protocol-common.md) | Agent identity, authorization, request lifecycle, and local contracts |
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
 | [MCP adapter](mcp.md) | Pinned local tool binding, bounded HTTP results, asynchronous status/cancellation, and bridge isolation |
+| [Remote MCP](remote-mcp.md) | Upstream session custody, pinned tool policy, bounded JSON/SSE mediation, and no automatic replay |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
 | [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
 | [Approval](approval.md) | Async human-in-the-loop interface, policy composition, immutable decisions, and fail-closed behavior |

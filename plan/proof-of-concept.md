@@ -46,11 +46,13 @@ domain/public-suffix behavior; rejecting all Domain attributes is intentional
 for this first profile. Cookies without HttpOnly remain equally private.
 
 The [local MCP contract](mcp.md) pins version `2025-11-25`, its seven tools,
-bounded result envelopes, and credential-free bridge behavior. Pin the remote
-MCP transport/protocol version separately when adding mediation and record
-it in the fixture and operator docs. Unsupported negotiation or server-initiated
-capabilities fail explicitly. The initial mediated server fixture performs only
-declared local operations; do not infer visibility into arbitrary remote egress.
+bounded result envelopes, and credential-free bridge behavior. The separate
+[remote MCP contract](remote-mcp.md) pins upstream Streamable HTTP to the same
+version, with private session state and enrolled tools. Prove both JSON and SSE
+responses; record its deliberately narrower capability and reconnect limits
+in fixture and operator docs. Unsupported server operations fail explicitly.
+The mediated server fixture performs only declared local operations; do not
+infer visibility into arbitrary remote egress.
 
 ## Initial finite limits
 

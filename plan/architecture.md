@@ -106,6 +106,13 @@ requests, sampling, elicitation, notifications, and nested tool invocations
 receive policy checks as well. Prompt text and tool descriptions cannot grant
 additional authority.
 
+Upstream MCP session headers are nevertheless private security state, not
+agent-facing correlation handles. The [first remote profile](remote-mcp.md)
+keeps them in a trusted protocol adapter, with an explicit tool allowlist and
+no automatic replay. Its preprovisioned credential path does not claim OAuth
+discovery/refresh support; the broader authorization boundary below applies
+when that integration is separately implemented.
+
 For standard MCP HTTP authorization, preserve separate upstream credentials
 and audience validation. The daemon is an OAuth client to the upstream; it
 does not pass the agent's inbound token through as the upstream token.

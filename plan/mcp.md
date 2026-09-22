@@ -234,6 +234,9 @@ resource, and account. No SDK default connector, reconnect loop, redirect,
 server-initiated request, or authentication discovery may bypass that boundary.
 Its separate fixture must prove JSON/SSE response handling, explicit version
 negotiation, session invalidation, cancellation, and no automatic tool replay.
+The [remote MCP contract](remote-mcp.md) now pins that first upstream profile,
+its lifecycle and limits, and the separate trusted adapter boundary. Its
+proposed behavior must not be mistaken for completed remote transport support.
 
 Before claiming local MCP support, demonstrate:
 

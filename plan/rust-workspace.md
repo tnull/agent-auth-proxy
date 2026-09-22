@@ -52,7 +52,8 @@ agent-auth-proxy/
     aap-transport/            # Network/TLS primitives and upstream execution
     aap-engine/               # Session lifecycle and complete request pipeline
     aap-http/                 # HTTP proxy and local data-plane adapter
-    aap-mcp/                  # Vault tools and MCP mediation
+    aap-mcp/                  # Credential-free vault/request tools and bridge
+    aap-mcp-upstream/         # Trusted remote protocol/session mediation
     aap-providers/            # Provider-specific request profiles
     aap-client/               # Credential-free daemon client
     aap-daemon/               # Binary composition and host control plane
@@ -91,7 +92,8 @@ Rust signatures. Review concrete signatures during each implementation step.
 | `aap-transport` | DNS resolution results, admitted endpoint dialing, HTTP streaming, TLS client/server primitives, bounded TCP relay | No credential lookup or implicit redirect/retry; caller supplies admitted routing and request data |
 | `aap-engine` | `Broker`, privileged session creation/revocation, session-scoped `AgentService`, `ApprovalProvider`, quotas, operation deduplication, request pipeline | One behavior path for daemon and embedded use; contains no CLI, approval UI, or provider SDK |
 | `aap-http` | Forward-proxy/CONNECT ingress, inspected HTTP handling, local operation/status endpoints, stream framing | Converts admitted connections into session-scoped engine operations; no independent auth policy |
-| `aap-mcp` | `vault.*` tools, constrained internet-access tool, remote MCP forwarding, stdio bridge | Translates MCP to the same `AgentService`; keeps SDK types out of the engine API |
+| `aap-mcp` | `vault.*` tools, constrained internet-access tool, stdio bridge | Credential-free translation to `AgentService`; no upstream private session state or connector |
+| `aap-mcp-upstream` | Pinned remote MCP lifecycle, private session IDs, request-ID mapping, tool/message validation and safe response transforms | Trusted protocol component introduced in W7; no store lookup, independent connector, approval authority, or SDK types in core public contracts |
 | `aap-providers` | Approved provider routes, request schemas, model/tool constraints, response/usage interpretation | Supplies profiles to the engine; no credential ownership, provider HTTP client, or conversation abstraction |
 | `aap-client` | `DaemonSessionClient`, operation/status/cancel and vault DTOs, credential-free stdio bridge support | Agent-safe dependency closure; no engine, secret store, private cookie, or CA key dependencies |
 | `aap-daemon` | `agent-auth-proxy` executable, configuration, socket/listener setup, operator administration, service lifecycle | Thin composition root; no duplicate substitution, policy, cookie, or observation logic |
@@ -116,9 +118,10 @@ external Rust dependencies and development-only edges are omitted.
 | `aap-auth` | `aap-types`, `aap-secrets` |
 | `aap-observe` | `aap-types` |
 | `aap-transport` | `aap-types` |
-| `aap-engine` | `aap-types`, `aap-policy`, `aap-secrets`, `aap-auth`, `aap-observe`, `aap-transport` |
+| `aap-engine` | `aap-types`, `aap-policy`, `aap-secrets`, `aap-auth`, `aap-observe`, `aap-transport`; `aap-mcp-upstream` when W7 is implemented |
 | `aap-http` | `aap-types`, `aap-transport` |
 | `aap-mcp` | `aap-types` |
+| `aap-mcp-upstream` | `aap-types`, `aap-auth` |
 | `aap-providers` | `aap-types` |
 | `aap-client` | `aap-types` |
 | `aap-store-sqlite` | `aap-types`, `aap-secrets`, `aap-config` |
@@ -136,6 +139,11 @@ Upstream MCP traffic still passes through engine admission, authentication, and
 observation. The MCP SDK must not independently open upstream HTTP connections,
 follow redirects, or refresh tokens outside that path. Choose its client/transport
 integration accordingly; its local server transport is not an egress exception.
+Keep the [remote protocol/session component](remote-mcp.md) in
+`aap-mcp-upstream`, separate from `aap-mcp`'s agent-safe local binding. This is
+a custody and dependency boundary, not a crate per MCP method. The engine
+supplies admitted exchanges and shared limits; the remote adapter cannot
+dispatch a server request, retry, or cleanup operation on its own.
 
 Extension interfaces belong to the lowest crate that defines their contract:
 store interface in `aap-secrets`, observation sinks in `aap-observe`, and profile
@@ -237,7 +245,7 @@ Proposed implementation stack:
 | Asynchronous I/O | Tokio; selected features per crate | Shared runtime with embedders, cancellable network work |
 | HTTP messages and streaming | `http`, `bytes`, `http-body`, Hyper and its runtime utilities | Preserve streaming and explicit proxy/connection behavior |
 | TLS | Rustls with one explicitly selected crypto provider and Tokio integration | Separate downstream termination and upstream certificate validation |
-| MCP | Official `rmcp` SDK, isolated in `aap-mcp` | Reuse protocol handling without making SDK types core public types |
+| MCP | Official `rmcp` protocol types, isolated in MCP adapters | Keep SDK types out of core public contracts; no independent SDK connector or credential flow |
 | Non-secret serialization/config | Serde and JSON at adapter/daemon boundaries | Reuse the wire-format parser for initial configuration; no separate config parser |
 | Secret handling | Small private-field owned-byte wrapper using `std` | Intentional access, no automatic formatting/serialization, minimal copies; no dedicated wrapper dependency |
 | Non-macOS secret store | `rusqlite` with SQLCipher support | Existing database encryption, isolated to `aap-store-sqlite` |

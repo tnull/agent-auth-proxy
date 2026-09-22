@@ -47,7 +47,7 @@ one enormous commit per milestone.
 | W4 | Expose the standalone daemon and credential-free client | `aap-http`, `aap-client`, `aap-daemon` | Real per-session sockets, separate operator socket, startup/shutdown, quotas, cancellation, and confinement fixture work end to end |
 | W5 | Expose the MCP password manager | `aap-auth` item/placeholder handling, `aap-mcp`, daemon/client composition | Agent can search permitted items and obtain context-bound fake credentials; unauthorized store access and cross-session use fail |
 | W6 | Complete the first supported website login | TLS interception in `aap-transport`/`aap-http`, form and cookie logic in `aap-auth`, engine integration | MCP discovery through fake form submission to authenticated page retrieval; private cookies, CSRF, safe redirects, logout, rotation, and uncertainty handling all verified |
-| W7 | Complete observation delivery and broaden transport support | `aap-observe`, `aap-http`, `aap-mcp`, `aap-transport` | Resume/gaps and required-mode failure behavior; declared HTTP/2, remote MCP, TCP, or WebSocket profiles pass their separate acceptance suites |
+| W7 | Complete observation delivery and broaden transport support | `aap-observe`, `aap-http`, `aap-mcp-upstream`, `aap-transport`, engine integration | Resume/gaps and required-mode failure behavior; declared remote MCP and TCP profiles pass their acceptance suites; HTTP/2/WebSocket remain separate coverage gates |
 | W8 | Prove reuse and prepare an operational release | External consumer fixtures, embedding examples, daemon packaging/docs | Another Rust project uses the libraries without daemon startup or neighboring repositories; shared behavioral suite passes for daemon and embedded use |
 | W9 | Deliver macOS credential storage and existing-item reuse | `aap-store-keychain` using `security-framework` | Keychain is the macOS default; new and enrolled existing items work without SQLite copies; access denial, external changes, and lock behavior are verified |
 
@@ -229,11 +229,18 @@ as specified in [observability](observability.md). Sinks receive redacted data;
 a sink cannot request the private authenticated request or store values.
 Content inspection has bounded buffering/decompression and cancellation.
 
-Add transports individually. For HTTP/2, verify independent stream identity and
-origin checks. For remote MCP, preserve separate upstream authentication and
-check server-initiated operations. For TCP, expose only admitted destinations
-and honest plaintext/opaque classification. WebSocket support needs explicit
-frame/operation policy; a successful upgrade is not unlimited authorization.
+Add transports individually. The [first remote MCP contract](remote-mcp.md)
+defines W7's pinned Streamable HTTP profile, private upstream sessions, reviewed
+tools, cancellation, and bounded JSON/SSE handling. Implement its profile and
+pure protocol tests first, then engine integration and an actual daemon/TLS
+fixture. Keep trusted remote state in `aap-mcp-upstream`, not the credential-free
+local adapter. Store API-key injection alone does not establish MCP mediation.
+
+For TCP, expose only admitted destinations and honest plaintext/opaque
+classification. HTTP/2 needs independent stream identity and origin checks;
+WebSocket needs explicit frame/operation policy. These later coverage profiles
+are not required to claim the narrower [first proof](proof-of-concept.md), and
+a successful upgrade is never unlimited authorization.
 
 Provide examples for a trusted host embedding the engine with an existing
 store adapter, a host supplying its own `SecretStore`/observation sink, and a
