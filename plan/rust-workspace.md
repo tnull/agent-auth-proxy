@@ -43,6 +43,7 @@ agent-auth-proxy/
   crates/
     aap-types/                # Shared non-secret contracts
     aap-policy/               # Grants, destination rules, decisions
+    aap-config/               # Trusted private-file access and safe updates
     aap-secrets/              # Secret-store interface and guarded values
     aap-store-sqlite/          # Non-macOS default encrypted SQLite backend
     aap-store-keychain/        # macOS default native credential backend
@@ -81,6 +82,7 @@ Rust signatures. Review concrete signatures during each implementation step.
 | --- | --- | --- |
 | `aap-types` | IDs, resource/profile descriptions, operation/status/error DTOs, request/response stream contracts, `AgentService` interface | No secret values, filesystem discovery, CLI, MCP SDK, or network connections |
 | `aap-policy` | `PolicySet`, grant evaluation, origin/route/address rules, safe decision reasons | Evaluates supplied facts; does not resolve DNS, fetch secrets, or send requests |
+| `aap-config` | Private directory/file handles, bounded JSON reads, owner/mode/ACL/link checks, atomic file replacement | Trusted filesystem access only; no policy decisions, credential resolution, or process-global path discovery |
 | `aap-secrets` | `SecretStore` trait, private store references, version/availability contract, guarded secret values | No agent-facing secret retrieval API; backend dependencies remain outside this crate |
 | `aap-store-sqlite` | SQLCipher-backed store, transactional item versions, schema/key lifecycle | Non-macOS daemon default; native database dependency is confined here |
 | `aap-store-keychain` | Native credential storage, authorized existing-item enrollment, access/lock semantics | macOS daemon default; no dependency from portable libraries |
@@ -109,6 +111,7 @@ external Rust dependencies and development-only edges are omitted.
 | --- | --- |
 | `aap-types` | None |
 | `aap-policy` | `aap-types` |
+| `aap-config` | `aap-types` |
 | `aap-secrets` | `aap-types` |
 | `aap-auth` | `aap-types`, `aap-secrets` |
 | `aap-observe` | `aap-types` |
@@ -118,9 +121,9 @@ external Rust dependencies and development-only edges are omitted.
 | `aap-mcp` | `aap-types` |
 | `aap-providers` | `aap-types` |
 | `aap-client` | `aap-types` |
-| `aap-store-sqlite` | `aap-types`, `aap-secrets` |
+| `aap-store-sqlite` | `aap-types`, `aap-secrets`, `aap-config` |
 | `aap-store-keychain` | `aap-types`, `aap-secrets` |
-| `aap-daemon` | `aap-types`, `aap-engine`, `aap-policy`, `aap-secrets`, `aap-observe`, `aap-transport`, `aap-http`, `aap-mcp`, `aap-providers`, `aap-client`; platform-selected `aap-store-sqlite` or `aap-store-keychain` |
+| `aap-daemon` | `aap-types`, `aap-engine`, `aap-policy`, `aap-config`, `aap-secrets`, `aap-observe`, `aap-transport`, `aap-http`, `aap-mcp`, `aap-providers`, `aap-client`; platform-selected `aap-store-sqlite` or `aap-store-keychain` |
 
 `AgentService` is the narrow agent-facing interface. The engine implements it
 on a session handle; the remote client implements it over the daemon connection.
@@ -138,6 +141,12 @@ Extension interfaces belong to the lowest crate that defines their contract:
 store interface in `aap-secrets`, observation sinks in `aap-observe`, and profile
 inspection interfaces in `aap-types`. Dependents supply implementations upward.
 No lower crate imports the daemon, Goose, or an HTTP/MCP server framework.
+
+The private-file boundary is shared by daemon configuration and the SQLite
+adapter in `aap-config`, rather than duplicating permission/link checks or adding
+filesystem dependencies to the backend-neutral store interface. Its scoped
+`rustix` dependency provides safe descriptor-relative OS operations. The Linux
+implementation is first; native ACL behavior remains a gate on other platforms.
 
 The approval interface belongs in `aap-engine`, which owns immutable operations
 and their lifecycle. Pure policy requirements remain in `aap-policy`; native

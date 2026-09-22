@@ -4,6 +4,7 @@ members = [
     "crates/aap-types",
     "crates/aap-policy",
     "crates/aap-secrets",
+    "crates/aap-config",
 ]
 
 [workspace.package]
@@ -16,6 +17,7 @@ publish = false
 aap-types = { path = "crates/aap-types" }
 aap-policy = { path = "crates/aap-policy" }
 aap-secrets = { path = "crates/aap-secrets" }
+aap-config = { path = "crates/aap-config" }
 base64 = "0.22"
 getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +27,7 @@ http = "1"
 bytes = "1"
 http-body = "1"
 http-body-util = "0.1"
+rustix = { version = "1", features = ["fs", "process"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

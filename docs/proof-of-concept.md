@@ -91,3 +91,19 @@ behavior tests were verified failing before implementation and now pass;
 a compile-fail doctest checks that secret debug formatting is unavailable.
 Workspace format/check/test/Clippy pass (18 unit tests and one doctest).
 No real backend behavior is established by these contract tests.
+
+Private filesystem boundary: `aap-config` implements Linux descriptor-based
+private reads/creation/replacement, ownership/mode/type/link checks, bounded
+JSON, safe ancestor traversal, and conservative POSIX ACL rejection. Six tests
+exercise private replacement, unsafe permissions/paths/links, size limits,
+descriptor anchoring, duplicate JSON, and a real extended ACL with mode 0600.
+The initial filesystem tests failed on their stubs; the ACL test also fails
+when the production ACL check is removed and passes with it restored.
+
+This host has a non-sticky group-writable `/tmp`, which is correctly rejected
+as a configuration ancestor. Filesystem tests use
+`AAP_TEST_ROOT=/home/tnull/workspace` for fresh automatically removed fixtures;
+Cargo build output remains under the task's `/tmp/cargo-target-*` directory.
+The user namespace maps only UID 1000, so the real ACL fixture names that
+mapped UID rather than attempting to create an invalid unmapped-user ACL.
+Other-platform ACL handling remains explicitly unsupported, not assumed safe.
