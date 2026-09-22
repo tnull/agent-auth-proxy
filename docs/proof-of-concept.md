@@ -83,3 +83,11 @@ verified red against their initial implementations and then green. All 15
 current unit tests pass, as do workspace format/check/Clippy. Session binding,
 the configuration-file loader, approval execution, and store access remain
 separate pending implementation work; W1 is not complete yet.
+
+Store contract: object-safe asynchronous read/use and separate administrative
+interfaces now exist, with bounded non-printable secret bytes, coherent field
+snapshots, opaque item revisions, and store-access generations. Three new
+behavior tests were verified failing before implementation and now pass;
+a compile-fail doctest checks that secret debug formatting is unavailable.
+Workspace format/check/test/Clippy pass (18 unit tests and one doctest).
+No real backend behavior is established by these contract tests.

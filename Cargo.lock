@@ -16,6 +16,9 @@ dependencies = [
 [[package]]
 name = "aap-secrets"
 version = "0.1.0"
+dependencies = [
+ "aap-types",
+]
 
 [[package]]
 name = "aap-types"
