@@ -7,6 +7,7 @@ pub mod profile;
 pub mod protocol;
 pub mod proxy;
 pub mod service;
+pub mod stream;
 pub mod wire;
 
 pub use protocol::*;

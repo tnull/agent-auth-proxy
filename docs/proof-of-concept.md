@@ -838,3 +838,30 @@ stable formatting and warning-free Clippy pass. No runtime dependency was added.
 Protocol-level observation, aggregate capacity/race acceptance, the TCP relay,
 actual confinement, external reuse, maintenance, and native-store gates remain
 open. These process tests do not by themselves complete W7 or the proof.
+
+## TCP framing foundation
+
+The credential-free `aap-types::stream` module now implements strict opening
+and control DTOs, bounded five-byte frame headers, zero-copy DATA encoding,
+incremental payload decoding, and shared directional sequence checks. Header
+type/length/state checks precede payload allocation or consumption. Early agent
+input is rejected before even collecting a header. Control parsing rejects
+duplicate/unknown members and bounds depth, structural tokens, and byte size.
+
+Opening identity, optional one-time pending notification, both half-close
+orders, narrowed byte limits, the 65,536-frame ceiling, and terminal counters
+are validated. Missing/truncated terminal delivery remains incomplete. An
+abnormal outcome after opening cannot claim known non-dispatch, and orderly
+completion requires both directional ends and matching admitted byte counts.
+The engine must still supply real write counts and enforce authorization,
+observation, aggregate reservations, deadlines, and cancellation.
+
+Eight new tests were observed failing against the initial stubs and now pass.
+They cover exact binary fixtures, every split across coalesced frames, truncated
+inputs, field/limit rejection, both directional endings, and payload left unread
+after a rejected header. All 196 unit tests, sixteen daemon process tests, and
+the compile-fail doctest pass on Rust 1.95.0. Workspace all-target check and
+warning-free Clippy pass; all fourteen `aap-types` tests also pass on Rust 1.88.0.
+No dependency was added. These are framing foundations, not an operational TCP
+endpoint: policy, dialing, engine relay, HTTP upgrade, client, and actual sandbox
+integration remain W7 work.

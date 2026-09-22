@@ -1,6 +1,7 @@
 # Local TCP stream binding, version 1
 
-Status: proposed W7 wire contract, not implemented functionality. This binds
+Status: W7 wire contract. Pure DTO/framing validation is implemented; the
+session upgrade, relay, and client integration remain pending. This binds
 [`stream.open`](tcp.md) to the existing session attachment. It changes neither
 upstream authentication nor the credential-store interface. Project names and
 the provisional protocol token can be renamed together before release.
