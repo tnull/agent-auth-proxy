@@ -796,3 +796,45 @@ confinement, external reuse, maintenance, and native-store gates remain open.
 All 188 unit tests, twelve daemon process tests, and the compile-fail doctest
 pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
 stable formatting, warning-free Clippy, and warning-free documentation pass.
+
+## Remote MCP daemon transport acceptance
+
+Four additional real-process tests exercise the pinned remote profile through
+the standalone daemon, credential-free client/stdio bridge, and inspected
+CONNECT. They use actual SQLCipher entries for two synthetic accounts at one
+controlled HTTPS endpoint. Two local sessions on the same account and another
+on a different account receive distinct native sessions; closing one does not
+revoke another. The fixture verifies both credential-account and native-session
+ownership, not merely different caller-visible aliases.
+
+The JSON and bounded SSE variants verify initialization ordering, reviewed tool
+listing, exact arguments, denied tool/method/resource inputs before upstream
+receipt, private headers, mapped IDs, and suppression of echoed credentials and
+native sessions. SSE includes server ping requests whose independently admitted
+children remain private. A real stdio bridge carries the same HTTP envelopes
+and preserves the fixed DELETE outcome. CONNECT and the local client share one
+context, while caller-selected native/version headers and ambiguous account
+selection fail without upstream requests.
+
+A delayed remote call is cancelled through the daemon's separate local API.
+Delivery stops, exactly one correlated cancellation notification carries the
+owned mapped ID, repeated cancellation sends nothing further, and status remains
+uncertain. A disconnect after fixture receipt also preserves uncertain status
+without replay on duplicate submission. Explicit different actions remain
+separately authorized; ordinary response loss does not itself revoke an otherwise
+valid context. Explicit DELETE followed by initialization creates fresh authority
+without replaying that earlier action. Captured request counters verify this.
+
+An independent observer pages through all fixture records without gaps and
+checks both metadata and decoded content for credential/native-ID leakage and
+child correlation. This proves the implemented sanitized HTTP views, not the
+still-pending parsed MCP-message/context-lifecycle observation contract.
+These are integration conformance tests of existing library behavior, not a
+claim that earlier commits failed newly discovered regression cases.
+
+All 188 unit tests, sixteen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
+stable formatting and warning-free Clippy pass. No runtime dependency was added.
+Protocol-level observation, aggregate capacity/race acceptance, the TCP relay,
+actual confinement, external reuse, maintenance, and native-store gates remain
+open. These process tests do not by themselves complete W7 or the proof.

@@ -4,8 +4,9 @@ This describes implemented behavior, not the full planned product. The current
 daemon brokers explicitly submitted API-key and profiled website requests, with
 password-manager discovery/fake credentials/status/logout and a local stdio
 MCP bridge and optional [session-bound CONNECT inspection](connect.md).
-Its remote MCP engine integration is partial and has no actual-daemon acceptance
-fixture yet; it is not a complete remote MCP gateway or sandbox launcher.
+Its pinned remote MCP profile now has actual daemon, bridge, and CONNECT
+fixtures; broader protocol/race/capacity acceptance remains incomplete. It is
+not a complete remote MCP gateway or sandbox launcher.
 
 ## Configuration and startup
 
@@ -181,8 +182,11 @@ response profile and finite context limits. A separate real-process test runs
 the form and JSON flows through two stdio MCP bridges, including duplicate
 execution/status and external observation. Three additional process tests cover
 CONNECT with provider and website authentication, authority/context isolation,
-CA rotation, and independent upstream trust. Remote MCP and filesystem/network
-confinement remain unverified.
+CA rotation, and independent upstream trust. Four remote-MCP process tests
+add JSON/SSE, native session/account isolation, stdio bridging, CONNECT,
+reviewed tool admission, private control children, cancellation, DELETE, and
+uncertain-delivery/no-replay evidence. Filesystem/network confinement remains
+unverified; these fixture processes do not establish a sandbox boundary.
 The tunneled website test also runs the enrolled 303 variant: no implicit
 follow-up is sent, and its separately submitted GET has no credential body.
 

@@ -92,8 +92,48 @@ logins, two isolated sessions using the same enrolled account, duplicate-operati
 behavior, logout, and an independent redacted-observation reader. These use
 synthetic credentials only. They do not prove sandbox confinement.
 
+Run `cargo test -p aap-daemon --test process remote_mcp` for real remote MCP
+exchanges using SQLCipher, separate daemon/bridge processes, and independent
+downstream/upstream TLS through CONNECT. The fixture verifies JSON/SSE, two
+accounts and multiple local sessions, reviewed tool lists/arguments, admitted
+server ping children, private header/echo suppression, local-first DELETE,
+cancellation, and uncertain disconnects without automatic replay. Observation
+records are checked separately, including decoded content and child correlation.
+
+## Using an enrolled remote MCP resource
+
+Configure a resource with `auth.kind: "mcp"`, a catalog-bound `item_id`, its
+authentication header/prefix, and reviewed `tools`. Each tool has an exact
+name, description, and finite argument rules; this is not dynamic enrollment.
+The backing item contains an API key/preprovisioned bearer value. Pin one
+query-free HTTPS POST endpoint, with optional same-path DELETE, explicit
+addresses, permitted application headers, and finite non-streaming route
+limits. SSE is bounded whole-response mediation, not unbounded tool progress.
+See [the enrollment specification](../plan/remote-mcp.md#enrollment-and-agent-binding).
+
+Grant the resource through the trusted session control interface. Submit
+`initialize` with version `2025-11-25`, consume its response, then submit
+`notifications/initialized` before listing/calling tools. The local
+`request.execute` tool carries each HTTP POST as a new application request ID,
+`Content-Type: application/json`, and base64-encoded JSON-RPC body. Its result
+contains sanitized JSON or SSE, not a newly aggregated local tool. Do not send
+an `auth_context`, real credential, or upstream `MCP-Session-Id` from the agent.
+
+The same session/resource context is shared by the local client, bridge, and
+inspected CONNECT path. A separate conversation needs a separate local session.
+For CONNECT, grant an unambiguous resource/account for the endpoint; granting
+two matching accounts does not allow the caller to choose by header. Starting
+a new bridge does not reset authority or operation history.
+
+Close with an empty DELETE to the enrolled endpoint. HTTP 204 confirms local
+closure only; inspect the fixed cleanup header for the remote outcome. Use
+explicit status/cancel operations for uncertain work; neither a fresh MCP
+handshake nor a new local bridge makes retrying a business action safe.
+
+## Remaining gateway work
+
 The reusable adapter also accepts an in-process `AgentService`; it imports no
-engine/store code. Remote MCP Streamable HTTP mediation, local MCP over HTTP,
-complete MCP-wire observation, real sandbox enforcement, and external embedding
-conformance remain separate delivery gates. The bounded request tool is not
+engine/store code. Broader remote MCP concurrency/overload acceptance, local MCP
+over HTTP, complete MCP-wire observation, real sandbox enforcement, and external
+embedding conformance remain separate delivery gates. The bounded request tool is not
 the model streaming endpoint and does not buffer an unlimited model stream.

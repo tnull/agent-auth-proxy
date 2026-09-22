@@ -1,9 +1,10 @@
 # Remote MCP mediation
 
 Status: W7 target contract; enrollment, private protocol state, and initial
-HTTPS engine paths are implemented. Complete control/cleanup integration and
-actual daemon acceptance fixtures remain pending. See
-[implementation evidence](../docs/proof-of-concept.md#remote-mcp-message-boundary).
+HTTPS engine paths, control/cleanup, and actual daemon/bridge/CONNECT fixtures
+are implemented. Protocol-level observation and broader race/capacity acceptance
+remain pending. See
+[implementation evidence](../docs/proof-of-concept.md#remote-mcp-daemon-transport-acceptance).
 This complements the
 [local MCP tools](mcp.md); it does not replace their seven-tool interface or
 introduce an authentication protocol. Names remain provisional.

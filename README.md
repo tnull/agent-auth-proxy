@@ -31,9 +31,11 @@ complete connection coverage, and confinement demonstrations remain pending.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
 upstream contexts. Real HTTPS initialization/list/call, admitted control replies,
-local-first cancellation, and bounded DELETE cleanup have engine coverage;
-actual daemon MCP fixtures and the broader remote gateway gates remain
-incomplete. See the [engine contract](crates/aap-engine/README.md#remote-mcp-integration).
+local-first cancellation, and bounded DELETE cleanup have engine coverage.
+Actual daemon, stdio-bridge, and CONNECT fixtures now verify the pinned remote
+profile across isolated sessions/accounts. Broader concurrency and protocol-level
+observation gates remain incomplete. See the
+[engine contract](crates/aap-engine/README.md#remote-mcp-integration).
 
 ## Development
 

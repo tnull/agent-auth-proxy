@@ -2,7 +2,7 @@ use super::*;
 use rustls::pki_types::{CertificateDer, ServerName};
 use tokio::io::AsyncReadExt;
 
-async fn enroll_ca(fixture: &mut Fixture) -> CertificateDer<'static> {
+pub(super) async fn enroll_ca(fixture: &mut Fixture) -> CertificateDer<'static> {
     let key = rcgen::KeyPair::generate().unwrap();
     let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Constrained(0));
@@ -88,7 +88,7 @@ async fn tunnel(
     .await
     .unwrap()
 }
-async fn request(
+pub(super) async fn request(
     socket: &std::path::Path,
     authority: &str,
     root: CertificateDer<'static>,
@@ -136,7 +136,7 @@ async fn request_on_tunnel(
     assert!(!parts.headers.contains_key("set-cookie"));
     (parts.status, parts.headers, body)
 }
-fn http_request(
+pub(super) fn http_request(
     method: &str,
     path: &str,
     host: &str,

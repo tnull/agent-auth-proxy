@@ -95,9 +95,10 @@ attempt is owned, with the barrier released on completion, timeout, or drop.
 Repeated closure does not release someone else's barrier or dispatch again.
 
 This is not the complete remote gateway.
-Protocol-specific observation metadata, multi-account and overload coverage,
-and actual daemon/CONNECT remote-MCP fixtures remain pending. These engine
-tests must not be described as completing W7.
+Actual daemon/bridge/CONNECT fixtures now exercise JSON/SSE, account/session
+isolation, control children, cancellation, cleanup, and no-replay uncertainty.
+Protocol-specific observation metadata and broader race/overload coverage
+remain pending. These tests must not be described as completing W7.
 
 ## Password-manager sessions
 
