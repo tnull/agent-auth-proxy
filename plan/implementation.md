@@ -2,9 +2,11 @@
 
 This plan implements the password-manager and credential-injection design as
 the [Rust workspace](rust-workspace.md). The first product is a freestanding
-daemon; reusable library APIs are exercised throughout development. This step
-adds the implementation plan only. Cargo manifests and Rust source follow in
-the first implementation milestone.
+daemon; reusable library APIs are exercised throughout development. Starter
+manifests and initial contracts now exist. This document specifies required
+work; [the delivery tracker](../docs/proof-of-concept.md) records evidence, and
+[the proposed first proof](proof-of-concept.md) narrows initial coverage and
+demonstration limits.
 
 ## Initial release boundary
 
@@ -39,7 +41,7 @@ one enormous commit per milestone.
 | ID | Work | Crates / artifacts | Completion evidence |
 | --- | --- | --- | --- |
 | W0 | Establish workspace and contributor workflow | Root Cargo/toolchain/lints, crate manifests/READMEs, minimal public contracts, CI | Clean workspace build; dependency graph is acyclic; production/client dependency closures contain no test stores or unintended heavy adapters |
-| W1 | Model identity, profiles, policy, and request lifecycle | `aap-types`, `aap-policy`, initial `aap-engine` session state | Cross-session/account/origin denial; duplicate-operation behavior; deterministic expiry/revocation tests |
+| W1 | Model identity, catalog, profiles, policy, approval boundary, and request lifecycle | `aap-types`, `aap-policy`, initial `aap-engine` session state and `ApprovalProvider` | Cross-session/account/origin denial; restrictive approval composition and fake-provider lifecycle; duplicate-operation behavior; deterministic expiry/revocation tests |
 | W2 | Define store contract and encrypted SQLite backend | `aap-secrets`, `aap-store-sqlite`, store fixture | Correct key required; writes/WAL/backups encrypted; version/lock/rotation and recovery behavior verified |
 | W3 | Deliver the first complete provider brokerage path | `aap-transport`, `aap-auth` header injection, `aap-engine`, `aap-providers`, basic `aap-observe` | Local agent request reaches controlled HTTPS provider with daemon-held key; stream returns safely; route substitution, redirect, and delegated-fetch attacks are denied |
 | W4 | Expose the standalone daemon and credential-free client | `aap-http`, `aap-client`, `aap-daemon` | Real per-session sockets, separate operator socket, startup/shutdown, quotas, cancellation, and confinement fixture work end to end |
@@ -94,6 +96,14 @@ Separate pure policy decisions from effectful operations. The engine supplies
 identity, current policy generation, request facts, and transport-resolved
 addresses. Check authority again at dispatch and on private state writeback;
 validation of an earlier version does not keep a revoked grant alive.
+
+Implement the [versioned catalog](catalog.md) and restrictive item-policy
+composition before credential use. Add the engine's asynchronous
+[`ApprovalProvider`](approval.md) seam and bounded pending lifecycle, with a
+deterministic test provider. No configured approval path means denial when one
+is required. The production UI/signing adapter is deferred, not the enforcement
+of approval-required policy. Test cookie-authenticated actions as well as
+password reads; store access control alone cannot cover both.
 
 The `SecretStore` contract needs these operations and outcomes:
 
@@ -162,6 +172,12 @@ Validate the entire configuration before accepting traffic. A reload installs a
 new validated generation atomically; removed grants/items revoke related work
 and contexts. Failed reloads leave the previous valid configuration active and
 report a safe operator error.
+
+The catalog and daemon configuration carry a shared `configuration_revision`.
+Reject mismatched pairs on startup/reload; replace them as private files and
+publish only one validated in-memory generation. Document interrupted-update
+recovery explicitly. A failed reload is not successful revocation: report that
+the prior generation remains active so the operator can revoke or stop it.
 
 The daemon owns signals, process logging setup, configured store connections,
 and listener lifetimes. Libraries own their behavior and expose cancellation
@@ -285,7 +301,7 @@ add convenience packages without a concrete requirement.
 
 For local Rust builds and tests, use a fresh directory under `/tmp` named for
 the repository and branch; do not put build output in the worktree. Example
-workflow, run from the future workspace root:
+workflow, run from the workspace root:
 
 ```sh
 build_branch=$(git branch --show-current | tr '/ ' '--')
@@ -301,8 +317,11 @@ cargo doc --workspace --no-deps --locked
 After editing Rust, run `cargo fmt --all` before the check. Cache reuse across
 commands in this one task is fine; unrelated worktrees/tasks get their own
 target directories. Actual feature-matrix and backend-fixture commands are
-added with those packages. No Cargo checks apply to the current documents-only
-change, because no Cargo workspace exists yet.
+added with those packages. Documentation-only work should validate examples,
+links, and consistency; it does not establish runtime security. Before any
+commit in this Rust workspace, run the required formatting, compilation, and
+test checks and report existing failures rather than claiming an unverified
+clean build.
 
 ## Remaining implementation choices
 
@@ -310,9 +329,11 @@ change, because no Cargo workspace exists yet.
   provisioning mechanism; validate native dependency compatibility for embedders.
 - Validate direct `security-framework` bindings for the macOS daemon. Record accessible existing-item
   classes, signing/access requirements, and enrollment UX before macOS release.
-- Select initial provider routes and website fixtures, finite size/time limits,
-  and the first production site's profile before claiming supported access.
-- Choose license and MSRV/toolchain before distributing libraries or a daemon.
+- Validate the proposed provider/site fixtures and finite limits in
+  [the first proof](proof-of-concept.md); choose a real production site's
+  profile before claiming supported access.
+- Choose a distribution license and verify the declared MSRV/toolchain before
+  distributing libraries or a daemon.
 - Specify the initial local operation/control HTTP schemas during W4; keep their
   access paths separate and preserve the common operation semantics.
 - Agree retention and required-observation policy before collecting real content.

@@ -29,8 +29,10 @@ exposed through agent MCP item discovery.
 
 ## Item model
 
-An enrolled login item has the following logical fields. Their storage format
-is not specified.
+An enrolled login item has the following logical fields, drawn from the private
+catalog, resource profile, grants, and current store snapshot. They are not one
+serialized agent record. The persistent catalog subset is specified in
+[the catalog contract](catalog.md).
 
 | Field | Meaning / visibility |
 | --- | --- |
@@ -149,7 +151,12 @@ Expired or revoked issuance requires a new explicitly authorized request ID.
 The subsequent login submission is a separate operation with its own request
 ID, or a proxy-generated ID for ordinary forwarded HTTP.
 
-Issuance verifies store availability and pins the credential version. A change
+Issuance verifies store availability and pins the credential version using the
+store's metadata contract, without resolving the real password. If the backend
+cannot provide suitable metadata without trusted interaction, fail with its
+typed availability/interaction outcome; do not bypass approval to prepare a
+placeholder. Any approved real-username disclosure has its own policy check.
+See [approval timing](approval.md#responsibility-and-policy). A change
 of version before use invalidates the issuance. `expires_in` is the remaining
 positive integer lifetime in seconds, selected by operator policy and capped
 by context/session/grant expiry; 600 above is illustrative. The proxy's clock
@@ -180,9 +187,11 @@ it. Operator revocation is the mechanism for removing that authority.
 No usable secret store means no new credential release or login: return
 `vault_locked` or `vault_unavailable`. Do not silently use a stale password
 version, fall back to an agent-supplied password, or expose store diagnostics.
-If the store requires human unlock, use the independent approval channel;
-the agent sees only the pending state. Before that channel exists, deny the
-operation with `interaction_unavailable`.
+If the store requires human unlock, use an independent trusted interaction
+channel; the agent sees only the pending state. Native unlock and operation
+approval are distinct prerequisites even if a later UI presents both.
+Before the required channel exists, deny the operation with
+`interaction_unavailable`.
 
 Default to no offline reuse after store lock or loss of a required lease.
 Invalidate outstanding placeholders and associated authenticated contexts when

@@ -1,13 +1,15 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.3. Reviewed against sources on 2026-09-22.
+Status: proposed design, version 0.4. Updated on 2026-09-22.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
 observable streams to independent consumers. The intended implementation
 language is Rust. This plan specifies boundaries, behavior, authentication
 contracts, reusable crate responsibilities, storage backends, and implementation
-milestones. It remains a plan: no Cargo workspace or daemon is implemented yet.
+milestones. A starter Cargo workspace and initial contracts exist; the daemon
+and security guarantees are not implemented or verified yet. See the
+[implementation evidence](../docs/proof-of-concept.md) for actual progress.
 
 ## Documents
 
@@ -17,10 +19,13 @@ milestones. It remains a plan: no Cargo workspace or daemon is implemented yet.
 | [Common protocol](protocol-common.md) | Agent identity, authorization, request lifecycle, and local contracts |
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
+| [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
+| [Approval](approval.md) | Async human-in-the-loop interface, policy composition, immutable decisions, and fail-closed behavior |
 | [Authentication](authentication.md) | Fake passwords, form substitution, private cookies, and API credentials |
 | [Observability](observability.md) | Stream events, redaction, ordering, backpressure, and consumer isolation |
 | [Rust workspace](rust-workspace.md) | Reusable crate boundaries, minimal dependencies, daemon and embedding APIs |
 | [Implementation](implementation.md) | Git/Cargo setup, ordered work packages, security checks, and release gates |
+| [First proof of concept](proof-of-concept.md) | Proposed initial coverage, finite limits, demonstration gates, and explicit exclusions |
 | [Sources and integration findings](references.md) | Standards assessment and evidence from Loupe and Goose |
 
 MUST, MUST NOT, SHOULD, and MAY express requirements of this proposed design.
@@ -77,7 +82,8 @@ recipient cannot be eliminated by response filtering.
 | Inspection | TLS termination for enrolled clients; separate verified TLS to each approved upstream |
 | Unsupported encryption | Reject in full-inspection mode; any permitted opaque relay is explicitly reported as opaque |
 | Observation | Redacted logical streams by default; bounded export, explicit loss semantics, no detector built into this scope |
-| Human interaction | Reserve a pending-approval lifecycle and immutable operation binding; UI and push/2FA integration follow later |
+| Human interaction | Async engine approval interface, restrictive global/session/item/action policy, and immutable decisions; production UI/signing follow later |
+| Catalog | Private versioned JSON separate from credentials; paired configuration revisions and atomic in-memory reload |
 
 ## Scope and limits
 
@@ -130,11 +136,16 @@ maps them to Rust crates, work packages, and concrete verification gates.
    waiting for a person or refreshing an upstream session.
 
 Each capability needs both positive and negative acceptance scenarios in its
-specification. Later regression tests must be demonstrated to fail on the
-pre-fix code as well as pass on the fix. This planning change contains no
-implementation or executable tests.
+specification. Regression tests must be demonstrated to fail on the pre-fix
+code as well as pass on the fix. Planning documents define requirements;
+unchecked implementation milestones are not evidence of working behavior.
 
-## Decisions to settle before implementation
+## Proposed baseline and remaining deployment decisions
+
+The [first proof-of-concept baseline](proof-of-concept.md) proposes concrete
+synthetic provider/site fixtures, transport coverage, finite limits, and delivery
+gates. It allows implementation to proceed without claiming production support.
+The following still require choices or evidence before a real deployment:
 
 - Which agent runners and sandbox platforms define the first enforceable
   deployment? A host-local boundary is assumed here; a remote ingress trust

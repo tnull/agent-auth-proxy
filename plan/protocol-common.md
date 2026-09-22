@@ -98,6 +98,9 @@ until the required approval succeeds. An unconfigured approval provider fails
 closed. A future signed-response adapter must verify the trusted approver and
 bind the decision to the operation, session, daemon epoch, expiry, and single-use
 approval identifier. Signing format and UI remain a separate integration task.
+The [approval contract](approval.md) specifies provider ownership, per-item
+policy, pending-operation limits, and race/decision semantics. Item settings
+are stored in the private [catalog](catalog.md), not in native password items.
 
 Reserve `pending_approval` now. Return only `request_id`, `approval_id`,
 `expires_at`, and a safe reason to the agent. The approval handle is a random

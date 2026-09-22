@@ -77,6 +77,8 @@ The catalog is `catalog.json` under `$XDG_CONFIG_HOME/agent-auth-proxy`
 item alias, approved label/account alias, backend reference, profile reference,
 and item policy. Reject unknown schema versions and unknown/duplicate fields.
 This file is plaintext with filesystem protection, not an encrypted vault.
+The [catalog contract](catalog.md) specifies its version-1 fields, approval
+values, shared configuration revision, and update/recovery behavior.
 
 On Unix, catalog/configuration directories MUST be user-owned with mode `0700`;
 files MUST be user-owned regular files with mode `0600`. Create temporary files

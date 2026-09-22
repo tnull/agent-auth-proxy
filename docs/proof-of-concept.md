@@ -59,3 +59,18 @@ implementations before being implemented. Random-ID and authority-field rejectio
 tests likewise failed first. All five checks now pass on Rust 1.95.0, alongside
 workspace check and Clippy. The async service and credential-free DTOs are
 defined; the engine that enforces their complete contract is still pending.
+
+Planning continuation, 2026-09-22: added proposed
+[catalog](../plan/catalog.md), [approval](../plan/approval.md), and
+[first-proof scope](../plan/proof-of-concept.md) contracts. The catalog now
+specifies a paired `configuration_revision`; draft Rust types still need to
+implement that contract. These documents do not complete an implementation
+milestone.
+
+Read-only verification of the existing work in progress: workspace compilation
+passes under Rust 1.95.0. The five completed core tests pass; five additional
+policy tests fail against unfinished catalog/target/approval stubs. Formatting
+checks also report those draft Rust files. No Rust source was changed during
+this planning continuation, and no commit was made with these checks failing.
+The catalog JSON example parses, relative document links resolve, and the
+planning diff has no whitespace errors.

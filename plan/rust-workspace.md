@@ -1,8 +1,10 @@
 # Rust workspace and reusable crate boundaries
 
-Status: implementation design. This specifies the future Cargo workspace;
-it does not scaffold crates or implement the daemon yet. Authentication behavior
-remains defined by [the authentication specification](authentication.md).
+Status: implementation design. A starter workspace exists; this document
+specifies the target package graph, not a list of completed crates. Actual
+progress is recorded in [the delivery tracker](../docs/proof-of-concept.md).
+Authentication behavior remains defined by
+[the authentication specification](authentication.md).
 
 ## Product and reuse model
 
@@ -54,7 +56,7 @@ agent-auth-proxy/
     aap-client/               # Credential-free daemon client
     aap-daemon/               # Binary composition and host control plane
     aap-test-support/         # Development-only fixtures
-  .github/workflows/          # CI once the workspace exists
+  .github/workflows/          # CI for implemented crates and supported features
 ```
 
 Each crate has its own `Cargo.toml`, README, `src/`, and relevant integration
@@ -85,7 +87,7 @@ Rust signatures. Review concrete signatures during each implementation step.
 | `aap-auth` | `PasswordManager`, context-bound placeholders, login profiles, cookie jars, credential transforms, response secret capture | Depends on store abstractions; does not select arbitrary destinations or open connections |
 | `aap-observe` | `ObservationEvent`, sink/subscription interfaces, redacted chunks, sequence/gap tracking, bounded export | Receives safe views; never serializes raw authenticated requests or store responses |
 | `aap-transport` | DNS resolution results, admitted endpoint dialing, HTTP streaming, TLS client/server primitives, bounded TCP relay | No credential lookup or implicit redirect/retry; caller supplies admitted routing and request data |
-| `aap-engine` | `Broker`, privileged session creation/revocation, session-scoped `AgentService`, quotas, operation deduplication, request pipeline | One behavior path for daemon and embedded use; contains no CLI or provider SDK |
+| `aap-engine` | `Broker`, privileged session creation/revocation, session-scoped `AgentService`, `ApprovalProvider`, quotas, operation deduplication, request pipeline | One behavior path for daemon and embedded use; contains no CLI, approval UI, or provider SDK |
 | `aap-http` | Forward-proxy/CONNECT ingress, inspected HTTP handling, local operation/status endpoints, stream framing | Converts admitted connections into session-scoped engine operations; no independent auth policy |
 | `aap-mcp` | `vault.*` tools, constrained internet-access tool, remote MCP forwarding, stdio bridge | Translates MCP to the same `AgentService`; keeps SDK types out of the engine API |
 | `aap-providers` | Approved provider routes, request schemas, model/tool constraints, response/usage interpretation | Supplies profiles to the engine; no credential ownership, provider HTTP client, or conversation abstraction |
@@ -136,6 +138,14 @@ Extension interfaces belong to the lowest crate that defines their contract:
 store interface in `aap-secrets`, observation sinks in `aap-observe`, and profile
 inspection interfaces in `aap-types`. Dependents supply implementations upward.
 No lower crate imports the daemon, Goose, or an HTTP/MCP server framework.
+
+The approval interface belongs in `aap-engine`, which owns immutable operations
+and their lifecycle. Pure policy requirements remain in `aap-policy`; native
+unlock/access checks remain in `aap-secrets` and its adapters. Inject a trusted
+`ApprovalProvider` when composing the broker; never expose approval submission
+authority through `AgentService`. No separate crate is needed until a concrete
+UI or signed-decision adapter has its own dependency boundary. See
+[the asynchronous approval contract](approval.md).
 
 `aap-test-support` depends only on the low-level crates whose interfaces it
 implements, plus its fixture networking dependencies. It must not depend on
@@ -204,10 +214,11 @@ local paths; add version requirements when preparing libraries for publishing.
 [Cargo workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html),
 [dependency resolver](https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions)
 
-Set and test an explicit MSRV when scaffolding. Aim to support the inspected
-Goose toolchain (`rust-version = "1.94.1"`) or older where dependencies permit;
-do not silently require a newer compiler from downstream users. Pin the build
-toolchain separately and review changes to either policy.
+The starter workspace declares Rust 1.88 compatibility and pins Rust 1.95.0 for
+build/format/lint tooling. Treat the MSRV as a requirement to verify, not a claim
+that the lower toolchain has already passed. This target also precedes the
+inspected Goose minimum (`rust-version = "1.94.1"`). Review dependencies against
+both policies; do not silently require a newer compiler from downstream users.
 
 Proposed implementation stack:
 
