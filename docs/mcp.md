@@ -35,6 +35,13 @@ bytes in `body_base64`, or a distinct existing-operation envelope. HTTP status
 `isError:true` result with a safe error code. Duplicate operation IDs never
 authorize another dispatch, and resource JSON cannot forge operation state.
 
+For an empty DELETE with local HTTP 204, the result preserves the engine's
+`x-aap-remote-cleanup` header only when it has exactly one fixed value:
+`confirmed`, `not_supported`, `skipped`, or `unknown`. This distinguishes local
+closure from remote cleanup; it cannot prove business rollback. Wrong methods,
+statuses, nonempty bodies, unknown/duplicate values, and mixed existing-operation
+metadata fail safely. Other private `x-aap-*` headers remain filtered.
+
 Status and explicit cancellation address the application's random request ID,
 not the JSON-RPC correlation ID. While a tool waits, independent status/cancel
 requests remain available. No human-approval capability is delegated to the

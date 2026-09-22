@@ -19,6 +19,8 @@ struct Fixture {
     requests: Mutex<Vec<ExecuteRequest>>,
     response: Mutex<Vec<u8>>,
     existing: bool,
+    cleanup: Vec<&'static str>,
+    cleanup_status: Option<u16>,
     wait: bool,
     started: tokio::sync::Notify,
     dropped: AtomicUsize,
@@ -63,6 +65,12 @@ impl AgentService for Fixture {
                 response = response
                     .status(202)
                     .header("x-aap-operation-state", "existing");
+            }
+            if !self.cleanup.is_empty() {
+                response = response.status(self.cleanup_status.unwrap_or(204));
+                for value in &self.cleanup {
+                    response = response.header("x-aap-remote-cleanup", *value);
+                }
             }
             Ok(response
                 .body(
@@ -309,6 +317,73 @@ async fn binary_responses_and_existing_operation_state_are_unambiguous() {
     assert_eq!(result["kind"], "operation");
     assert_eq!(result["operation"]["state"], "pending_approval");
     assert!(result.get("headers").is_none());
+}
+
+#[tokio::test]
+async fn cleanup_outcomes_survive_the_credential_free_tool_binding() {
+    for value in ["confirmed", "not_supported", "skipped", "unknown"] {
+        let service = Arc::new(Fixture {
+            cleanup: vec![value],
+            ..Fixture::default()
+        });
+        let tools = Tools::new(service);
+        let mut input = request();
+        input["method"] = json!("DELETE");
+        input["body_base64"] = json!("");
+        let result = tools.call("request.execute", input).await.unwrap();
+        let content = result.structured_content.unwrap();
+        assert_eq!(content["status"], 204);
+        assert!(
+            content["headers"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(["x-aap-remote-cleanup", value])),
+            "safe cleanup outcome was discarded"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cleanup_metadata_rejects_ambiguous_or_misbound_results() {
+    for mode in [
+        "value",
+        "duplicate",
+        "status",
+        "method",
+        "request_body",
+        "body",
+        "existing",
+    ] {
+        let mut fixture = Fixture {
+            cleanup: vec!["confirmed"],
+            ..Default::default()
+        };
+        let mut input = request();
+        input["method"] = json!("DELETE");
+        input["body_base64"] = json!("");
+        match mode {
+            "value" => fixture.cleanup = vec!["private-session-secret"],
+            "duplicate" => fixture.cleanup.push("confirmed"),
+            "status" => fixture.cleanup_status = Some(200),
+            "method" => input["method"] = json!("POST"),
+            "request_body" => input["body_base64"] = json!(STANDARD.encode("unexpected")),
+            "body" => *fixture.response.lock().unwrap() = b"unexpected".to_vec(),
+            "existing" => fixture.existing = true,
+            _ => unreachable!(),
+        }
+        let result = Tools::new(Arc::new(fixture))
+            .call("request.execute", input)
+            .await
+            .unwrap();
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "unsafe cleanup binding: {mode}"
+        );
+        let result = payload(result);
+        assert_eq!(result["code"], "result_unavailable");
+        assert!(!result.to_string().contains("private-session-secret"));
+    }
 }
 
 #[tokio::test]

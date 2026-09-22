@@ -756,3 +756,43 @@ confinement, reuse, maintenance, and native-store gates remain open.
 All 181 unit tests, twelve daemon process tests, and the compile-fail doctest
 pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
 stable formatting, warning-free Clippy, and warning-free documentation pass.
+
+## Local-first remote MCP session termination
+
+An admitted empty DELETE now closes the selected local MCP generation before
+store access, approval, capacity admission, DNS, or upstream I/O. Outstanding
+response delivery loses authority immediately. Native-session cleanup, if any,
+is a separately tracked child with current custody, policy, observation, and
+reserved-control checks, no additional human wait, and a two-second deadline.
+Closed authority cannot be restored by an acknowledgment or late response.
+
+Local HTTP 204 carries only the fixed `x-aap-remote-cleanup` outcome. Empty,
+safe upstream 200/204 confirms termination; empty safe 405 reports unsupported;
+predispatch denial or absent native authority skips the attempt. Other responses
+or postdispatch interruption remain unknown. No upstream body, cookie, native
+session, or secret becomes a cleanup result. The credential-free MCP adapter
+validates the header's exact value, uniqueness, method, status, and empty bodies
+before preserving it; all other private proxy headers remain filtered.
+
+Closure and fresh-generation admission share the same selection lock. A
+one-shot cleanup owner excludes reinitialization only while the attempt is
+live; completion, timeout, cancellation, and task drop release the barrier.
+Repeated DELETE does not dispatch again or release the first owner's barrier.
+The closed generation and operation history remain retired.
+
+Three engine cases failed before implementation with unsupported DELETE or
+missing cleanup dispatch, and now pass. Two MCP adapter cases failed with a
+discarded safe outcome or silently accepted invalid binding, and now pass.
+Additional conformance covers timeout, owner drop, child cancellation, repeated
+closure, locked/rotated custody, unavailable capacity, approval-required and
+stateless contexts, accepted/rejected acknowledgment headers, and no replay.
+These tests include real SQLCipher and controlled HTTPS exchanges; the held
+transport cases also verify interruption before the fixture receives bytes.
+
+Actual daemon/CONNECT MCP fixtures, broader account/capacity evidence and
+protocol-specific observation remain remote-gateway acceptance work. TCP,
+confinement, external reuse, maintenance, and native-store gates remain open.
+
+All 188 unit tests, twelve daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
+stable formatting, warning-free Clippy, and warning-free documentation pass.

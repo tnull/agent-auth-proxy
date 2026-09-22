@@ -800,3 +800,53 @@ fn completion_tokens_and_issued_ids_cannot_cross_exchange_boundaries() {
     initializing.abandon(exchange);
     assert_eq!(initializing.state(now), State::Invalid);
 }
+#[test]
+fn cleanup_acknowledgments_are_empty_profile_statuses_without_private_headers() {
+    use aap_types::mcp::CleanupOutcome;
+    for (status, expected) in [
+        (200, CleanupOutcome::Confirmed),
+        (204, CleanupOutcome::Confirmed),
+        (405, CleanupOutcome::NotSupported),
+    ] {
+        assert_eq!(
+            super::validate_cleanup_ack(
+                http::StatusCode::from_u16(status).unwrap(),
+                &http::HeaderMap::new()
+            )
+            .unwrap(),
+            expected
+        );
+    }
+    for status in [202, 301, 401, 403, 404, 500] {
+        assert!(
+            super::validate_cleanup_ack(
+                http::StatusCode::from_u16(status).unwrap(),
+                &http::HeaderMap::new()
+            )
+            .is_err()
+        );
+    }
+    for (name, value) in [
+        ("set-cookie", "private=value"),
+        ("mcp-session-id", "private-session"),
+        ("content-encoding", "gzip"),
+        ("mcp-protocol-version", "wrong"),
+        ("trailer", "x-extra"),
+    ] {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(name, http::HeaderValue::from_static(value));
+        for status in [http::StatusCode::OK, http::StatusCode::METHOD_NOT_ALLOWED] {
+            assert!(super::validate_cleanup_ack(status, &headers).is_err());
+        }
+    }
+    let mut headers = http::HeaderMap::new();
+    headers.append(
+        "mcp-protocol-version",
+        http::HeaderValue::from_static(super::VERSION),
+    );
+    headers.append(
+        "mcp-protocol-version",
+        http::HeaderValue::from_static(super::VERSION),
+    );
+    assert!(super::validate_cleanup_ack(http::StatusCode::OK, &headers).is_err());
+}

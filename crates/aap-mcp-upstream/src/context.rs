@@ -25,6 +25,24 @@ pub fn validate_control_ack(status: StatusCode, headers: &HeaderMap) -> Result<(
     Ok(())
 }
 
+/// Validate a private session-termination acknowledgment. The host must still
+/// require empty EOF without trailers and revalidate its dispatch authority.
+pub fn validate_cleanup_ack(
+    status: StatusCode,
+    headers: &HeaderMap,
+) -> Result<aap_types::mcp::CleanupOutcome> {
+    use aap_types::mcp::CleanupOutcome;
+    headers::validate(headers)?;
+    if headers.contains_key("mcp-session-id") {
+        return Err(ErrorCode::InspectionUnavailable.into());
+    }
+    match status {
+        StatusCode::OK | StatusCode::NO_CONTENT => Ok(CleanupOutcome::Confirmed),
+        StatusCode::METHOD_NOT_ALLOWED => Ok(CleanupOutcome::NotSupported),
+        _ => Err(ErrorCode::InspectionUnavailable.into()),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     New,

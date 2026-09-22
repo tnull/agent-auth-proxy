@@ -120,6 +120,23 @@ refusal cannot undo local closure or imply that remote work was rolled back.
 Do not dispatch cleanup with a revoked credential. Daemon shutdown discards
 private context state regardless of whether remote cleanup is possible.
 
+For the first binding, an admitted DELETE has no body and returns local HTTP
+204 with `x-aap-remote-cleanup` set to `confirmed`, `not_supported`, `skipped`, or
+`unknown`. This local status confirms closure only, never business rollback.
+Only a complete empty upstream 200/204 confirms cleanup; a complete empty 405
+reports unsupported termination. Other statuses, unsafe headers/trailers,
+nonempty bodies, interrupted delivery, and timeouts report uncertainty after
+dispatch. Policy/custody/capacity denial before dispatch reports skipped, as
+does an absent, already closed, expired, or stateless context with no native
+session to terminate. No raw upstream response is returned.
+
+Cleanup gets a separately admitted child operation, not a new human wait or a
+background retry. Concurrent fresh initialization is refused while this local
+cleanup attempt is owned; completion, cancellation, or its two-second deadline
+releases that barrier without reviving the closed generation. The fixed-value
+cleanup header is safe local metadata that the credential-free MCP tool binding
+may expose; other private proxy headers retain their existing filtering rules.
+
 ## Messages, tool policy, and responses
 
 Parse strict UTF-8 JSON with duplicate-member, depth, token, and size checks.

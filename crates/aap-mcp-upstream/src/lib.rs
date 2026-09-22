@@ -11,7 +11,7 @@ mod sse;
 mod wire;
 pub use context::{
     CancellationRequest, Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse,
-    State, validate_control_ack,
+    State, validate_cleanup_ack, validate_control_ack,
 };
 pub use sse::SseDecoder;
 

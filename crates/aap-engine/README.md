@@ -83,7 +83,18 @@ invalidates its context immediately, including a response not yet consumed.
 New MCP notification submissions still share normal input/tracking admission;
 the existing-ID `request.cancel` endpoint allocates no new parent operation.
 
-This is not the complete remote gateway. Endpoint DELETE still fails explicitly.
+An enrolled empty endpoint DELETE now closes local authority before any store
+access or remote work. Its optional authenticated child has the same current
+policy/custody/observation checks and two-second bound. No native session,
+changed/locked custody, missing capacity, or approval requirement skips that
+child. A local HTTP 204 reports closure with `x-aap-remote-cleanup` equal to
+`confirmed`, `not_supported`, `skipped`, or `unknown`; it never reports business
+rollback. Only empty, safe upstream 200/204 or 405 acknowledgments establish
+confirmed or unsupported cleanup. Reinitialization is excluded while the
+attempt is owned, with the barrier released on completion, timeout, or drop.
+Repeated closure does not release someone else's barrier or dispatch again.
+
+This is not the complete remote gateway.
 Protocol-specific observation metadata, multi-account and overload coverage,
 and actual daemon/CONNECT remote-MCP fixtures remain pending. These engine
 tests must not be described as completing W7.

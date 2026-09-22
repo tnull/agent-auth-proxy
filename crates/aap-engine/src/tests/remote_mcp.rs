@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 mod cancellation;
+mod cleanup;
 mod controls;
 
 fn tools() -> Vec<Tool> {

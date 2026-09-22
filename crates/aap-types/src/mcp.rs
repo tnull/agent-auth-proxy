@@ -7,6 +7,36 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const VERSION: &str = "2025-11-25";
 pub const MAX_REQUEST: usize = 256 * 1024;
 pub const MAX_RESPONSE: usize = 1024 * 1024;
+pub const CLEANUP_HEADER: &str = "x-aap-remote-cleanup";
+
+/// Safe local metadata: closing local authority does not prove remote rollback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanupOutcome {
+    Confirmed,
+    NotSupported,
+    Skipped,
+    Unknown,
+}
+impl CleanupOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::NotSupported => "not_supported",
+            Self::Skipped => "skipped",
+            Self::Unknown => "unknown",
+        }
+    }
+    pub fn from_header(value: &str) -> Option<Self> {
+        match value {
+            "confirmed" => Some(Self::Confirmed),
+            "not_supported" => Some(Self::NotSupported),
+            "skipped" => Some(Self::Skipped),
+            "unknown" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

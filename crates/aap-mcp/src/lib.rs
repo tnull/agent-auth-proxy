@@ -115,6 +115,7 @@ impl Tools {
         }
         drop(decoded);
         let id = request.request_id.clone();
+        let empty_delete = request.method == "DELETE" && request.body_base64.is_empty();
         let response = self.service.execute(request).await?;
         let (parts, mut body) = response.into_parts();
         let existing = match parts.headers.get("x-aap-operation-state") {
@@ -144,6 +145,25 @@ impl Tools {
                 return Err(ErrorCode::InspectionUnavailable.into());
             }
         }
+        if let Some(value) = parts.headers.get(aap_types::mcp::CLEANUP_HEADER)
+            && (!empty_delete
+                || existing
+                || parts.status.as_u16() != 204
+                || !bytes.is_empty()
+                || parts
+                    .headers
+                    .get_all(aap_types::mcp::CLEANUP_HEADER)
+                    .iter()
+                    .count()
+                    != 1
+                || value
+                    .to_str()
+                    .ok()
+                    .and_then(aap_types::mcp::CleanupOutcome::from_header)
+                    .is_none())
+        {
+            return Err(ErrorCode::ResultUnavailable.into());
+        }
         if existing {
             let operation: OperationStatus =
                 aap_types::json::decode(&bytes).map_err(|_| ErrorCode::ResultUnavailable)?;
@@ -164,7 +184,7 @@ impl Tools {
         }
         let mut headers = Vec::new();
         for (name, value) in &parts.headers {
-            if name.as_str().starts_with("x-aap-")
+            if (name.as_str().starts_with("x-aap-") && name != aap_types::mcp::CLEANUP_HEADER)
                 || matches!(
                     name.as_str(),
                     "set-cookie"

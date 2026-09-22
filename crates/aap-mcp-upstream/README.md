@@ -12,9 +12,10 @@ credential/policy versions, approval, quotas, observation, and cancellation.
 Validated messages do not authorize a connection or credential use.
 
 The engine now has real HTTPS initialization/list/call and admitted server-ping
-child/cancellation tests; DELETE integration and actual daemon remote-MCP
+child/cancellation and local-first DELETE tests; actual daemon remote-MCP
 fixtures remain pending. `validate_control_ack` checks a control POST's status
-and headers; the host must also require an empty, trailer-free body through EOF.
+and headers. `validate_cleanup_ack` accepts only safe 200/204 or 405 cleanup
+headers; the host must also require an empty, trailer-free body through EOF.
 Do not advertise a complete remote gateway from these component tests alone.
 This crate starts no runtime or connector and
 does not retrieve credentials or launch background work. SDK types remain

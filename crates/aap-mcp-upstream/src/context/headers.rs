@@ -15,13 +15,7 @@ pub(super) struct Admitted {
     pub redactor: Redactor,
 }
 
-pub(super) fn admit(
-    method: Method,
-    status: StatusCode,
-    headers: &HeaderMap,
-    previous: Option<&HeaderValue>,
-    template: &Redactor,
-) -> Result<Admitted> {
+pub(super) fn validate(headers: &HeaderMap) -> Result<()> {
     if headers.len() > 64
         || headers
             .iter()
@@ -52,6 +46,17 @@ pub(super) fn admit(
     {
         return Err(ErrorCode::InspectionUnavailable.into());
     }
+    Ok(())
+}
+
+pub(super) fn admit(
+    method: Method,
+    status: StatusCode,
+    headers: &HeaderMap,
+    previous: Option<&HeaderValue>,
+    template: &Redactor,
+) -> Result<Admitted> {
+    validate(headers)?;
     let empty = matches!(method, Method::Initialized | Method::Cancel);
     if status
         != if empty {

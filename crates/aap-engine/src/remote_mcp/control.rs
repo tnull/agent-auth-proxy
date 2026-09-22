@@ -1,5 +1,6 @@
 //! Control messages are separate admitted operations, never a second client.
 use super::*;
+use aap_types::mcp::CleanupOutcome;
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 // Private server-selected IDs are not retained in operation DTOs or telemetry.
@@ -11,6 +12,40 @@ pub(super) const SAFE_CANCEL: &[u8] = br#"{"jsonrpc":"2.0","method":"notificatio
 pub(super) enum Kind {
     Ping,
     Cancel,
+    Delete,
+}
+impl Kind {
+    fn check(self, binding: &Binding) -> Result<()> {
+        if self != Self::Delete {
+            return binding.check();
+        }
+        // A one-shot owned DELETE intentionally outlives ordinary context
+        // authority. Its pinned custody, session and deadline still apply.
+        if !binding.closing.load(Ordering::Acquire)
+            || Instant::now() >= binding.expires
+            || binding
+                .state
+                .lock()
+                .map_err(|_| ErrorCode::InternalError)?
+                .state(Instant::now().into_std())
+                != State::Closed
+        {
+            return Err(ErrorCode::SessionInvalid.into());
+        }
+        Ok(())
+    }
+    async fn revalidate(self, binding: &Binding) -> Result<()> {
+        self.check(binding)?;
+        if let Err(error) = binding
+            .store
+            .revalidate(&binding.reference, &binding.lease)
+            .await
+        {
+            binding.invalidate();
+            return Err(error.into());
+        }
+        self.check(binding)
+    }
 }
 pub(super) struct Control {
     pub binding: Arc<Binding>,
@@ -45,6 +80,7 @@ impl Session {
             deadline,
         )
         .await
+        .map(|_| ())
     }
 
     pub(super) async fn dispatch_remote_control(
@@ -54,7 +90,7 @@ impl Session {
         target: &Target,
         control: Control,
         deadline: Instant,
-    ) -> Result<()> {
+    ) -> Result<CleanupOutcome> {
         let Control {
             binding,
             outgoing: prepared,
@@ -63,6 +99,12 @@ impl Session {
         let safe_body = match kind {
             Kind::Ping => SAFE_PING_REPLY,
             Kind::Cancel => SAFE_CANCEL,
+            Kind::Delete => &[],
+        };
+        let method = if kind == Kind::Delete {
+            "DELETE"
+        } else {
+            "POST"
         };
         let mut child = Guard::child(
             self,
@@ -71,9 +113,13 @@ impl Session {
                 request_id: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
                 resource: profile.id.clone(),
                 auth_context: None,
-                method: "POST".into(),
+                method: method.into(),
                 target: target.as_str().into(),
-                headers: vec![("content-type".into(), "application/json".into())],
+                headers: if kind == Kind::Delete {
+                    vec![]
+                } else {
+                    vec![("content-type".into(), "application/json".into())]
+                },
                 body_base64: STANDARD.encode(safe_body),
             },
         )?;
@@ -93,7 +139,7 @@ impl Session {
             if !self.core.options.resources.contains(&profile.id) {
                 return Err(ErrorCode::PolicyDenied.into());
             }
-            let route = profile.authorize("POST", target, prepared.body.len())?;
+            let route = profile.authorize(method, target, prepared.body.len())?;
             route.authorize_headers(&child.operation.request.headers)?;
             let item = config
                 .catalog
@@ -110,14 +156,14 @@ impl Session {
             child.record(
                 Direction::Outbound,
                 Data::RequestStart {
-                    method: "POST".into(),
+                    method: method.into(),
                     target: target.as_str().into(),
                     headers: super::super::observation::request_headers(
                         &child.operation.request.headers,
                     ),
                 },
             )?;
-            // Approval of the parent does not cover another authenticated POST.
+            // Approval of the parent does not cover another authenticated action.
             // In particular, never hold the parent response open for human input.
             if requires_approval(
                 config.require_approval,
@@ -127,10 +173,9 @@ impl Session {
                 true,
             ) {
                 child.fail(ErrorCode::InteractionUnavailable);
-                return Ok(());
+                return Ok(CleanupOutcome::Skipped);
             }
-            binding.check()?;
-            binding.revalidate().await?;
+            kind.revalidate(&binding).await?;
             child.active = Some(
                 self.core
                     .control
@@ -160,7 +205,7 @@ impl Session {
             }
             let endpoint = Endpoint::new(&profile.origin, addresses[0])?;
             let mut outgoing = http::Request::builder()
-                .method("POST")
+                .method(method)
                 .uri(target.as_str())
                 .body(Bytes::from(prepared.body))
                 .map_err(|_| ErrorCode::RequestInvalid)?;
@@ -182,7 +227,7 @@ impl Session {
                 Direction::Outbound,
                 View::Upstream,
                 Data::RequestStart {
-                    method: "POST".into(),
+                    method: method.into(),
                     target: target.as_str().into(),
                     headers: super::super::observation::headers(outgoing.headers()),
                 },
@@ -196,9 +241,9 @@ impl Session {
                 },
             )?;
             child.end_content(Direction::Outbound, &[View::Agent, View::Upstream])?;
-            binding.revalidate().await?;
+            kind.revalidate(&binding).await?;
             self.check()?;
-            binding.check()?;
+            kind.check(&binding)?;
             child.record_both(
                 Direction::Outbound,
                 Data::PolicyDecision {
@@ -235,7 +280,13 @@ impl Session {
                     headers: super::super::observation::headers(response.headers()),
                 },
             )?;
-            aap_mcp_upstream::validate_control_ack(response.status(), response.headers())?;
+            let status = response.status().as_u16();
+            let outcome = if kind == Kind::Delete {
+                aap_mcp_upstream::validate_cleanup_ack(response.status(), response.headers())?
+            } else {
+                aap_mcp_upstream::validate_control_ack(response.status(), response.headers())?;
+                CleanupOutcome::Confirmed
+            };
             let mut body = response.into_body();
             while let Some(frame) = body.frame().await {
                 let frame = frame?;
@@ -243,25 +294,32 @@ impl Session {
                     return Err(ErrorCode::InspectionUnavailable.into());
                 }
             }
-            binding.revalidate().await?;
-            binding.check()?;
+            kind.revalidate(&binding).await?;
             child.record(
                 Direction::Inbound,
                 Data::ResponseStart {
-                    status: 202,
+                    status,
                     headers: vec![],
                 },
             )?;
             child
                 .operation
-                .transition(OperationState::Dispatching, Some(202))?;
-            child.complete()
+                .transition(OperationState::Dispatching, Some(status))?;
+            child.complete()?;
+            Ok(outcome)
         };
         let parent_cancelled = async {
-            if kind == Kind::Ping {
+            if kind != Kind::Cancel {
                 parent.cancelled.cancelled().await;
             } else {
                 // A cancellation child exists because its parent was cancelled.
+                std::future::pending::<()>().await;
+            }
+        };
+        let binding_cancelled = async {
+            if kind != Kind::Delete {
+                binding.cancelled.cancelled().await;
+            } else {
                 std::future::pending::<()>().await;
             }
         };
@@ -270,7 +328,7 @@ impl Session {
             _ = self.core.cancelled.cancelled() => Err(ErrorCode::SessionInvalid.into()),
             _ = parent_cancelled => Err(ErrorCode::RequestConflict.into()),
             _ = child_cancelled.cancelled() => Err(ErrorCode::RequestConflict.into()),
-            _ = binding.cancelled.cancelled() => Err(ErrorCode::SessionInvalid.into()),
+            _ = binding_cancelled => Err(ErrorCode::SessionInvalid.into()),
             result = tokio::time::timeout_at(deadline.min(Instant::now() + Duration::from_secs(2)), attempt) =>
                 result.unwrap_or_else(|_| Err(ErrorCode::OutcomeUnknown.into())),
         };
@@ -279,6 +337,13 @@ impl Session {
                 binding.invalidate();
             }
             child.fail(error.code);
+            if kind == Kind::Delete {
+                return Ok(if child.dispatched {
+                    CleanupOutcome::Unknown
+                } else {
+                    CleanupOutcome::Skipped
+                });
+            }
         }
         result
     }

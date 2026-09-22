@@ -8,8 +8,10 @@ use aap_secrets::{ItemMetadata, ItemRef, Lease};
 use aap_transport::{Endpoint, Limits};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
+use std::sync::atomic::AtomicBool;
 
 mod cancellation;
+mod cleanup;
 mod control;
 
 #[derive(Default)]
@@ -25,6 +27,7 @@ pub(super) struct Binding {
     pub expires: Instant,
     handshake: Instant,
     pub cancelled: Cancellation,
+    closing: AtomicBool,
     _permit: OwnedSemaphorePermit,
 }
 struct Reservation {
@@ -193,6 +196,12 @@ impl Session {
             .rev()
             .find(|(name, _)| name == resource)
             .map(|(_, binding)| binding.clone());
+        if current
+            .as_ref()
+            .is_some_and(|binding| binding.closing.load(Ordering::Acquire))
+        {
+            return Err(ErrorCode::RequestConflict.into());
+        }
         if let Some(binding) = &current
             && binding.lease != metadata.lease
         {
@@ -237,6 +246,7 @@ impl Session {
                 expires,
                 handshake: now + Duration::from_secs(30),
                 cancelled: Cancellation::default(),
+                closing: AtomicBool::new(false),
                 _permit: permit,
             });
             vault.contexts.push((resource.into(), binding.clone()));
@@ -270,9 +280,7 @@ impl Session {
         if input.auth_context.is_some() {
             return Err(ErrorCode::PolicyDenied.into());
         }
-        // DELETE cleanup remains a separate integration step; no generic
-        // pass-through is used in its absence.
-        if input.method != "POST" {
+        if !matches!(input.method.as_str(), "POST" | "DELETE") {
             return Err(ErrorCode::AuthProfileUnsupported.into());
         }
         let Authentication::Mcp {
@@ -293,6 +301,14 @@ impl Session {
             {
                 return Err(ErrorCode::InspectionUnavailable.into());
             }
+        }
+        if input.method == "DELETE" {
+            if !body.is_empty() {
+                return Err(ErrorCode::RequestInvalid.into());
+            }
+            return self
+                .close_remote_context(guard, profile, target, item_id, deadline)
+                .await;
         }
         if !input
             .headers
