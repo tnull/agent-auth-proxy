@@ -137,3 +137,19 @@ native-work race/limit checks. The engine, real transport, daemon, password
 substitution/cookie handling, MCP, observability, and confinement demonstrations
 are still to be implemented; these component tests do not establish the full
 proof of concept.
+
+Verified upstream transport: `aap-transport` now separates DNS candidate
+enumeration from admitted-address dialing and performs real HTTP/1.1 over
+certificate/name-verified TLS. It has bounded streaming, deadlines, cancellation,
+connection-driver cleanup, explicit uncertain-delivery errors, and no automatic
+redirects, retries, or TLS early data. `aap-test-support` supplies only synthetic
+local TLS origins as a development dependency; it is not a production fallback.
+Nine transport tests cover these boundaries. Initial endpoint/execution tests
+failed against stubs; additional malformed-port rejection failed before its
+correction. Workspace format/check/test/Clippy pass on Rust 1.95.0; all 43 unit
+tests and the compile-fail doctest also pass on Rust 1.88.0.
+
+These are private low-level upstream responses, not yet an agent-safe broker.
+Final credential injection, response sanitization, interception/CONNECT, and
+the daemon remain separate uncompleted work. No W3 completion is claimed by
+transport tests alone.

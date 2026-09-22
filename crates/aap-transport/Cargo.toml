@@ -1,0 +1,24 @@
+[package]
+name = "aap-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+aap-types.workspace = true
+bytes.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+tokio = { workspace = true, features = ["rt", "net", "sync", "time", "macros"] }
+
+[dev-dependencies]
+aap-test-support.workspace = true
+
+[lints]
+workspace = true

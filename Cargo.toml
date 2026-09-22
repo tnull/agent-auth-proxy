@@ -6,6 +6,8 @@ members = [
     "crates/aap-secrets",
     "crates/aap-config",
     "crates/aap-store-sqlite",
+    "crates/aap-transport",
+    "crates/aap-test-support",
 ]
 
 [workspace.package]
@@ -20,6 +22,8 @@ aap-policy = { path = "crates/aap-policy" }
 aap-secrets = { path = "crates/aap-secrets" }
 aap-config = { path = "crates/aap-config" }
 aap-store-sqlite = { path = "crates/aap-store-sqlite" }
+aap-transport = { path = "crates/aap-transport" }
+aap-test-support = { path = "crates/aap-test-support" }
 base64 = "0.22"
 getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -32,6 +36,11 @@ http-body-util = "0.1"
 rustix = { version = "1", features = ["fs", "process"] }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled-sqlcipher"] }
 tokio = { version = "1", default-features = false }
+hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

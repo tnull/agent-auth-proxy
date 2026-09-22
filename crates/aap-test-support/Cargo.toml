@@ -1,0 +1,21 @@
+[package]
+name = "aap-test-support"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["http1", "server"] }
+hyper-util.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+rcgen.workspace = true
+tokio = { workspace = true, features = ["rt", "net", "sync", "time", "macros"] }
+
+[lints]
+workspace = true
