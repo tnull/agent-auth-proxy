@@ -26,6 +26,9 @@ impl Session {
                 .operations
                 .lock()
                 .map_err(|_| ErrorCode::InternalError)?;
+            if operations.issuances.contains_key(&request.request_id) {
+                return Err(ErrorCode::RequestConflict.into());
+            }
             if let Some(existing) = operations.items.get(&request.request_id) {
                 if *existing.request != request {
                     return Err(ErrorCode::RequestConflict.into());
@@ -66,7 +69,9 @@ impl Session {
                 .map_err(|_| ErrorCode::RequestInvalid)?
                 .len()
                 + 512;
-            if operations.items.len() >= 4096 || operations.bytes + bytes > 8 * 1024 * 1024 {
+            if operations.items.len() + operations.issuances.len() >= 4096
+                || operations.bytes + bytes > 8 * 1024 * 1024
+            {
                 return Err(ErrorCode::LimitExceeded.into());
             }
             self.core
@@ -99,6 +104,8 @@ impl Session {
             finished: false,
             dispatched: false,
             bytes: 0,
+            website: None,
+            response_recorded: false,
         };
         let deadline = self
             .core
@@ -115,8 +122,19 @@ impl Session {
                 let cancellation = {
                     let operation = operation.clone();
                     let session = self.clone();
+                    let binding = guard
+                        .website
+                        .as_ref()
+                        .map(|exchange| exchange.binding.clone());
                     Box::pin(async move {
-                        tokio::select! { _ = operation.cancelled.cancelled() => {}, _ = session.core.cancelled.cancelled() => {}, _ = tokio::time::sleep_until(deadline) => {} }
+                        let website = async {
+                            if let Some(binding) = binding {
+                                tokio::select! { _ = binding.cancelled.cancelled() => {}, _ = tokio::time::sleep_until(binding.expires) => {} }
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        };
+                        tokio::select! { _ = operation.cancelled.cancelled() => {}, _ = session.core.cancelled.cancelled() => {}, _ = tokio::time::sleep_until(deadline) => {}, _ = website => {} }
                     }) as BoxFuture<'static, ()>
                 };
                 Ok(response.map(|body| {
@@ -138,9 +156,7 @@ impl Session {
     async fn dispatch(&self, guard: &mut Guard, deadline: Instant) -> Result<Response> {
         let configuration = &self.core.host.configuration;
         let request = &guard.operation.request;
-        if request.auth_context.is_some()
-            || !self.core.options.resources.contains(&request.resource)
-        {
+        if !self.core.options.resources.contains(&request.resource) {
             return Err(ErrorCode::PolicyDenied.into());
         }
         let profile = configuration
@@ -157,6 +173,14 @@ impl Session {
         }
         let route = profile.authorize(&request.method, &target, body.len())?;
         route.authorize_headers(&request.headers)?;
+        if let Authentication::Form { .. } = &profile.auth {
+            return self
+                .dispatch_website(guard, deadline, profile, &target, body)
+                .await;
+        }
+        if request.auth_context.is_some() {
+            return Err(ErrorCode::PolicyDenied.into());
+        }
         let Authentication::ApiKey {
             item_id,
             header,
@@ -189,6 +213,9 @@ impl Session {
             .iter()
             .find(|item| &item.item_id == item_id)
             .ok_or(ErrorCode::PolicyDenied)?;
+        if !self.item_allowed(item) {
+            return Err(ErrorCode::PolicyDenied.into());
+        }
         guard
             .operation
             .transition(OperationState::Validated, None)?;
@@ -399,13 +426,15 @@ impl Drop for PendingRetention<'_> {
     }
 }
 
-struct Guard {
+pub(super) struct Guard {
     session: Session,
-    operation: Arc<Operation>,
-    active: Option<OwnedSemaphorePermit>,
+    pub operation: Arc<Operation>,
+    pub active: Option<OwnedSemaphorePermit>,
     finished: bool,
-    dispatched: bool,
-    bytes: u64,
+    pub dispatched: bool,
+    pub bytes: u64,
+    pub website: Option<super::website::Exchange>,
+    pub response_recorded: bool,
 }
 impl Guard {
     fn complete(&mut self) -> Result<()> {
@@ -421,6 +450,26 @@ impl Guard {
             {
                 return Err(ErrorCode::OutcomeUnknown.into());
             }
+            if let Some(exchange) = &self.website {
+                exchange.binding.check()?;
+            }
+            let mut context_state = self
+                .website
+                .as_ref()
+                .map(|exchange| {
+                    exchange
+                        .binding
+                        .state
+                        .lock()
+                        .map_err(|_| ErrorCode::InternalError)
+                })
+                .transpose()?;
+            if self.website.as_ref().is_some_and(|exchange| {
+                exchange.binding.cancelled.is_cancelled()
+                    || exchange.binding.expires <= Instant::now()
+            }) {
+                return Err(ErrorCode::OutcomeUnknown.into());
+            }
             self.record(
                 Direction::Inbound,
                 Data::ContentEnd {
@@ -429,12 +478,15 @@ impl Guard {
                     reason: None,
                 },
             )?;
+            if let (Some(context), Some(exchange)) = (&mut context_state, &self.website) {
+                context.status = exchange.final_state;
+            }
             state.state = OperationState::Completed;
         }
         self.finished = true;
         Ok(())
     }
-    fn record(&self, direction: Direction, data: Data) -> Result<()> {
+    pub fn record(&self, direction: Direction, data: Data) -> Result<()> {
         self.session.core.host.configuration.recorder.record(
             Event {
                 session_id: self.session.id().into(),
@@ -461,6 +513,9 @@ impl Guard {
     fn fail(&mut self, reason: ErrorCode) {
         if self.finished {
             return;
+        }
+        if let Some(exchange) = &self.website {
+            exchange.binding.invalidate(AuthState::Revoked);
         }
         let state = if self.dispatched {
             OperationState::OutcomeUnknown
@@ -516,7 +571,9 @@ impl BodyTrait for TrackedBody {
         }
         match Pin::new(&mut this.body).poll_frame(context) {
             Poll::Ready(Some(Ok(frame))) => {
-                if let Some(bytes) = frame.data_ref() {
+                if let Some(bytes) = frame.data_ref()
+                    && !this.guard.response_recorded
+                {
                     if let Err(error) = this.guard.record(
                         Direction::Inbound,
                         Data::ContentChunk {

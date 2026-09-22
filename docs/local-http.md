@@ -22,9 +22,9 @@ listener has at most 32 active connections; connections are not kept alive.
 | `/aap/v1/vault/logout` | `AuthContext` | `Logout` |
 | `/aap/v1/connect/admit` | `{"authority":"…"}` | JSON null after admission |
 
-Exposure of a method does not imply the engine supports its profile yet. At
-this checkpoint the broker implements API-key execution/status/cancellation;
-password-manager and interception operations still return unsupported errors.
+Exposure of a method does not imply the engine supports every profile. The
+broker implements API-key execution, the controlled website profile, and the
+four password-manager methods. Interception admission remains unsupported.
 CONNECT tunneling is not enabled by merely calling the admission endpoint.
 
 Proxy errors carry `x-aap-error: 1` and the fixed `Error` JSON DTO. Upstream
@@ -32,6 +32,10 @@ HTTP error statuses remain ordinary upstream responses, not proxy errors.
 For repeated identical execution IDs, the engine returns existing status with
 `x-aap-operation-state: existing` (202 while pending, 200 when terminal), not
 replayed content or another dispatch. Modified reuse conflicts.
+Issuance shares the same ID namespace: identical completed issuance returns its
+still-valid fake credentials, pending issuance reports `auth_in_progress`, and
+revoked/expired or failed issuance cannot create a replacement binding. Its
+operation status is available through the same status endpoint.
 
 The client performs no automatic retry or redirect. Its connection deadline is
 ten seconds; a call/stream is bounded to 630 seconds and 32 MiB, with 65-second
@@ -39,6 +43,6 @@ stream inactivity. A broken connection after sending is conservatively uncertain
 Use explicit status/cancel calls; disconnect alone is not proof of remote rollback.
 Server shutdown cancels listener work and drops in-flight execution futures.
 
-The daemon/operator composition, provider-compatible mounts, and intercepted
-forward-proxy binding are separate work. None is available through a hidden
-path or a permissive fallback on the session socket.
+The [daemon/operator composition](daemon.md) uses distinct private listeners.
+Provider-compatible mounts and intercepted forward-proxy binding remain
+separate work, not hidden paths or permissive fallbacks on this session router.

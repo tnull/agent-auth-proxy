@@ -220,11 +220,15 @@ impl Fixture {
 fn options() -> SessionOptions {
     SessionOptions {
         resources: vec!["provider".into()],
+        items: None,
         lifetime: Duration::from_secs(60),
         require_approval: false,
         require_observation: true,
     }
 }
+
+mod vault;
+mod website;
 
 #[tokio::test]
 async fn cancellation_at_eof_cannot_record_a_successful_completion() {

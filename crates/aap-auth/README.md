@@ -58,8 +58,11 @@ These deliberately narrow fixture rules are informed by
 reviewed 2026-09-22. They do not claim general browser conformance.
 
 Eight unit tests cover positive transformations and malicious/ambiguous inputs.
-All initially failed against stubs. **Engine context lifecycle, store-version
-revalidation, action approval, login success evaluation, redirect policy, MCP,
-and TLS interception are not supplied by these primitives.** In particular,
+All initially failed against stubs. A further test covers bounded merging of
+private redaction templates without carrying buffered stream content forward.
+**Engine context lifecycle, store-version revalidation, action approval, login
+success evaluation, redirect policy, MCP, and TLS interception are not supplied
+by these primitives.** In particular,
 neither a placeholder nor a CookieJar grants authority to dispatch a request.
-Website authentication is not yet available through the daemon.
+The [engine](../aap-engine/README.md) now integrates them for the controlled
+website profile exposed through the daemon's explicit local operation API.

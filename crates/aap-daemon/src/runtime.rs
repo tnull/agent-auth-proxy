@@ -85,6 +85,7 @@ impl Control {
         Self::prune(&mut state);
         let session = state.broker.create_session(SessionOptions {
             resources: request.resources,
+            items: request.items,
             lifetime: Duration::from_secs(request.lifetime_seconds),
             require_approval: request.require_approval,
             require_observation: request.require_observation

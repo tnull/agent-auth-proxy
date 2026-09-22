@@ -18,6 +18,8 @@ use tokio::{
 };
 
 mod pipeline;
+mod vault;
+mod website;
 
 pub struct Configuration {
     pub catalog: Catalog,
@@ -32,6 +34,9 @@ pub struct Configuration {
 }
 pub struct SessionOptions {
     pub resources: Vec<String>,
+    /// Optional narrowing to enrolled item aliases. None grants the items of
+    /// the already permitted profiles; an empty list grants no credentials.
+    pub items: Option<Vec<String>>,
     pub lifetime: Duration,
     pub require_approval: bool,
     pub require_observation: bool,
@@ -65,6 +70,8 @@ struct Host {
     epoch: String,
     sessions: Mutex<HashMap<String, Weak<SessionCore>>>,
     operation_bytes: AtomicUsize,
+    contexts: Arc<Semaphore>,
+    login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
 }
 struct SessionCore {
     host: Arc<Host>,
@@ -76,10 +83,12 @@ struct SessionCore {
     active: Arc<Semaphore>,
     pending: Arc<Semaphore>,
     pending_bytes: AtomicUsize,
+    vault: Mutex<vault::Vault>,
 }
 #[derive(Default)]
 struct Operations {
     items: HashMap<String, Arc<Operation>>,
+    issuances: HashMap<String, Arc<vault::Issuance>>,
     bytes: usize,
 }
 struct Operation {
@@ -158,11 +167,14 @@ impl Broker {
                 epoch: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
                 sessions: Mutex::new(HashMap::new()),
                 operation_bytes: AtomicUsize::new(0),
+                contexts: Arc::new(Semaphore::new(64)),
+                login_attempts: Mutex::new(HashMap::new()),
             }),
         })
     }
     pub fn create_session(&self, options: SessionOptions) -> Result<Session> {
         let mut resources = std::collections::HashSet::new();
+        let mut items = std::collections::HashSet::new();
         if options.lifetime.is_zero()
             || options.lifetime > Duration::from_secs(3600)
             || options.resources.len() > 256
@@ -174,6 +186,15 @@ impl Broker {
                         .profiles
                         .iter()
                         .any(|profile| &profile.id == resource)
+            })
+            || options.items.as_ref().is_some_and(|ids| {
+                ids.len() > 1000
+                    || ids.iter().any(|id| {
+                        !items.insert(id)
+                            || !self.host.configuration.catalog.items.iter().any(|item| {
+                                &item.item_id == id && options.resources.contains(&item.profile)
+                            })
+                    })
             })
         {
             return Err(ErrorCode::RequestInvalid.into());
@@ -198,6 +219,7 @@ impl Broker {
             active: Arc::new(Semaphore::new(8)),
             pending: Arc::new(Semaphore::new(16)),
             pending_bytes: AtomicUsize::new(0),
+            vault: Mutex::new(vault::Vault::default()),
         });
         sessions.insert(id, Arc::downgrade(&core));
         Ok(Session { core })
@@ -216,6 +238,26 @@ impl Broker {
             .values()
         {
             operation.cancel();
+        }
+        for issuance in session
+            .core
+            .operations
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?
+            .issuances
+            .values()
+        {
+            issuance.cancel();
+        }
+        for context in session
+            .core
+            .vault
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?
+            .contexts
+            .values()
+        {
+            context.invalidate(AuthState::Revoked);
         }
         Ok(())
     }
@@ -247,23 +289,32 @@ impl AgentService for Session {
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>> {
         Box::pin(self.execute_inner(request))
     }
-    fn search_items(&self, _request: SearchItems) -> BoxFuture<'_, Result<SearchResult>> {
-        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    fn search_items(&self, request: SearchItems) -> BoxFuture<'_, Result<SearchResult>> {
+        Box::pin(async move { self.search_inner(request) })
     }
-    fn get_login(&self, _request: GetLogin) -> BoxFuture<'_, Result<Login>> {
-        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    fn get_login(&self, request: GetLogin) -> BoxFuture<'_, Result<Login>> {
+        Box::pin(self.get_login_inner(request))
     }
-    fn auth_status(&self, _request: AuthContext) -> BoxFuture<'_, Result<AuthStatus>> {
-        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    fn auth_status(&self, request: AuthContext) -> BoxFuture<'_, Result<AuthStatus>> {
+        Box::pin(self.auth_status_inner(request))
     }
-    fn logout(&self, _request: AuthContext) -> BoxFuture<'_, Result<Logout>> {
-        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    fn logout(&self, request: AuthContext) -> BoxFuture<'_, Result<Logout>> {
+        Box::pin(async move { self.logout_inner(request) })
     }
     fn request_status(&self, request_id: String) -> BoxFuture<'_, Result<OperationStatus>> {
-        Box::pin(async move { self.operation(&request_id)?.status() })
+        Box::pin(async move {
+            if let Some(issuance) = self.issuance(&request_id)? {
+                return issuance.status();
+            }
+            self.operation(&request_id)?.status()
+        })
     }
     fn cancel(&self, request_id: String) -> BoxFuture<'_, Result<OperationStatus>> {
         Box::pin(async move {
+            if let Some(issuance) = self.issuance(&request_id)? {
+                issuance.cancel();
+                return issuance.status();
+            }
             let operation = self.operation(&request_id)?;
             operation.cancel();
             operation.status()

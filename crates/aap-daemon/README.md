@@ -11,8 +11,9 @@ EOF on standard input from a trusted launcher. It does not accept an unlock key
 in arguments, environment variables, or JSON. See the [operator contract](../../docs/daemon.md)
 and [process tests](tests/process.rs) for configuration and synthetic execution.
 
-Five real-process tests exercise brokerage/observation, reload, startup refusal,
-crash/restart, and expiry. This is not yet the complete proxy: website logins,
-CONNECT, MCP/TCP, native macOS custody, and sandbox enforcement remain pending.
+Six real-process tests exercise brokerage/observation, reload, startup refusal,
+crash/restart, expiry, and the controlled website login/password-manager flow
+with two isolated clients. This is not yet the complete proxy: CONNECT, MCP/TCP,
+native macOS custody, and sandbox enforcement remain pending.
 No system service, global CA installation, production credential enrollment, or
 neighboring-project modification is implied.

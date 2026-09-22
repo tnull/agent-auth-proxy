@@ -537,3 +537,263 @@ async fn expired_session_cannot_dispatch_and_is_pruned_by_control() {
     assert!(!path.exists());
     stop(&mut child).await;
 }
+
+#[tokio::test]
+async fn standalone_password_manager_keeps_website_sessions_private_and_isolated() {
+    use aap_types::{
+        AuthContext, AuthState, CredentialFields, GetLogin, SearchItems,
+        profile::{CsrfProfile, LoginEncoding, LoginProfile, LoginSuccess},
+    };
+    let mut fixture = Fixture::new().await;
+    fixture.origin = Origin::with_handler(|request| {
+        let mut reply = match request.target.path() {
+            "/login" => { let mut reply = Reply::body(r#"{"csrf":"private-site-csrf","echo":"private-pre"}"#); reply.headers.push(("set-cookie".into(),"pre=private-pre; Secure; Path=/".into())); reply },
+            "/session" => {
+                assert_eq!(request.body,"user=private-website-user&password=private-website-password&csrf=private-site-csrf");
+                assert_eq!(request.headers["cookie"],"pre=private-pre");
+                let mut reply = Reply::body(r#"{"authenticated":true,"echo":"private-website-password private-website-cookie"}"#);
+                reply.headers.push(("set-cookie".into(),"session=private-website-cookie; Secure; HttpOnly; Path=/".into())); reply
+            },
+            "/protected" => { assert!(request.headers["cookie"].to_str().unwrap().contains("session=private-website-cookie")); Reply::body(r#"{"data":"protected"}"#) },
+            _ => panic!("unexpected website route"),
+        }; reply.headers.push(("content-type".into(),"application/json".into())); reply
+    }).await;
+    let store = SqliteStore::open(
+        Arc::new(aap_config::PrivateDir::open(&fixture.root.join("s"), false).unwrap()),
+        SecretBytes::new(vec![17; 32]).unwrap(),
+        OpenMode::Existing,
+        tokio::runtime::Handle::current(),
+    )
+    .await
+    .unwrap();
+    let reference = ItemRef::new("private-key-ref".into()).unwrap();
+    let metadata = aap_secrets::SecretStore::metadata(&store, &reference)
+        .await
+        .unwrap();
+    store
+        .put(
+            &reference,
+            [
+                (
+                    Field::Username,
+                    SecretBytes::new(b"private-website-user".to_vec()).unwrap(),
+                ),
+                (
+                    Field::Password,
+                    SecretBytes::new(b"private-website-password".to_vec()).unwrap(),
+                ),
+            ]
+            .into(),
+            Some(&metadata.lease),
+        )
+        .await
+        .unwrap();
+    drop(store);
+    fixture.config.upstream_roots_der_base64 =
+        vec![STANDARD.encode(fixture.origin.certificate.as_ref())];
+    let profile = &mut fixture.config.profiles[0];
+    profile.origin = fixture.origin.origin();
+    profile.addresses = AddressPolicy::Pinned(vec![fixture.origin.address.ip()]);
+    profile.routes = [
+        ("GET", "/login"),
+        ("POST", "/session"),
+        ("GET", "/protected"),
+    ]
+    .into_iter()
+    .map(|(method, path)| Route {
+        method: method.into(),
+        path: path.into(),
+        query: None,
+        max_request_bytes: 256 * 1024,
+        max_response_bytes: 256 * 1024,
+        allowed_headers: vec!["content-type".into()],
+        streaming: false,
+        require_approval: false,
+    })
+    .collect();
+    profile.auth = Authentication::Form {
+        login: LoginProfile {
+            page: format!("{}/login", fixture.origin.origin()),
+            target: format!("{}/session", fixture.origin.origin()),
+            encoding: LoginEncoding::Form,
+            fields: CredentialFields {
+                username: "user".into(),
+                password: "password".into(),
+            },
+            username_visible: false,
+            success: LoginSuccess {
+                status: 200,
+                cookie_names: vec!["session".into()],
+                json_pointer: "/authenticated".into(),
+                expected: json!(true),
+            },
+            csrf: Some(CsrfProfile {
+                response_pointer: "/csrf".into(),
+                submit_field: "csrf".into(),
+            }),
+        },
+    };
+    fixture.write();
+    let (mut child, ready) = fixture.start().await;
+    let control = fixture.root.join("r").join(ready.control_socket);
+    let mut clients = Vec::new();
+    for _ in 0..2 {
+        let (status, attachment) = local(
+            control.clone(),
+            "/aap/operator/v1/session/create",
+            json!({"resources":["provider"],"items":["key"],"lifetime_seconds":60}),
+        )
+        .await;
+        assert!(status.is_success());
+        let attachment: SessionAttachment = serde_json::from_value(attachment).unwrap();
+        clients.push(aap_client::DaemonSessionClient::new(
+            fixture.root.join("r").join(attachment.ingress_socket),
+        ));
+    }
+    let uri = format!("{}/login", fixture.origin.origin());
+    let search = clients[0]
+        .search_items(SearchItems {
+            uri: uri.clone(),
+            query: None,
+            cursor: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(search.items[0].item_id, "key");
+    let issue = || GetLogin {
+        request_id: aap_types::ids::random_id(16).unwrap(),
+        item_id: "key".into(),
+        uri: uri.clone(),
+    };
+    let login = clients[0].get_login(issue()).await.unwrap();
+    let other = clients[1].get_login(issue()).await.unwrap();
+    assert_ne!(login.auth_context, other.auth_context);
+    assert_ne!(
+        login.credentials.password.value,
+        other.credentials.password.value
+    );
+    let make_request = |context: &str, method: &str, path: &str, body: &[u8]| ExecuteRequest {
+        request_id: aap_types::ids::random_id(16).unwrap(),
+        resource: "provider".into(),
+        auth_context: Some(context.into()),
+        method: method.into(),
+        target: format!("{}{path}", fixture.origin.origin()),
+        headers: if body.is_empty() {
+            vec![]
+        } else {
+            vec![(
+                "content-type".into(),
+                "application/x-www-form-urlencoded".into(),
+            )]
+        },
+        body_base64: STANDARD.encode(body),
+    };
+    let page = clients[0]
+        .execute(make_request(&login.auth_context, "GET", "/login", b""))
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let page: Value = serde_json::from_slice(&page).unwrap();
+    assert_eq!(page["echo"], "[redacted]");
+    let body = format!(
+        "user={}&password={}&csrf={}",
+        login.credentials.username.value,
+        login.credentials.password.value,
+        page["csrf"].as_str().unwrap()
+    );
+    let response = clients[0]
+        .execute(make_request(
+            &login.auth_context,
+            "POST",
+            "/session",
+            body.as_bytes(),
+        ))
+        .await
+        .unwrap();
+    assert!(!response.headers().contains_key("set-cookie"));
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["echo"],
+        "[redacted] [redacted]"
+    );
+    assert_eq!(
+        clients[0]
+            .auth_status(AuthContext {
+                auth_context: login.auth_context.clone()
+            })
+            .await
+            .unwrap()
+            .state,
+        AuthState::Authenticated
+    );
+    let protected = clients[0]
+        .execute(make_request(&login.auth_context, "GET", "/protected", b""))
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&protected).unwrap()["data"],
+        "protected"
+    );
+    assert!(
+        clients[1]
+            .execute(make_request(&login.auth_context, "GET", "/protected", b""))
+            .await
+            .is_err()
+    );
+    assert!(
+        clients[1]
+            .execute(make_request(&other.auth_context, "GET", "/protected", b""))
+            .await
+            .is_err()
+    );
+    clients[0]
+        .logout(AuthContext {
+            auth_context: login.auth_context.clone(),
+        })
+        .await
+        .unwrap();
+    assert!(
+        clients[0]
+            .execute(make_request(&login.auth_context, "GET", "/protected", b""))
+            .await
+            .is_err()
+    );
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+    let (_, batch) = local(
+        fixture.root.join("r").join(ready.observation_socket),
+        "/aap/observe/v1/read",
+        json!({"limit":256}),
+    )
+    .await;
+    for record in serde_json::from_value::<aap_observe::Batch>(batch)
+        .unwrap()
+        .records
+    {
+        if let aap_observe::Data::ContentChunk { body_base64, .. } = record.event.data {
+            let bytes = STANDARD.decode(body_base64).unwrap();
+            let value = String::from_utf8_lossy(&bytes);
+            for private in [
+                "private-website-user",
+                "private-website-password",
+                "private-website-cookie",
+                "private-pre",
+                "private-site-csrf",
+                "aap_pw1_",
+                "aap_un1_",
+                "aap_cs1_",
+            ] {
+                assert!(!value.contains(private));
+            }
+        }
+    }
+    stop(&mut child).await;
+}

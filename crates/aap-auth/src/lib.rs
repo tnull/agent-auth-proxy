@@ -49,6 +49,35 @@ pub struct Redactor {
     done: bool,
 }
 impl Redactor {
+    /// A fresh stream using the same private patterns, without buffered content.
+    pub fn fresh(&self) -> Self {
+        Self {
+            patterns: self.patterns.clone(),
+            pending: Vec::new(),
+            longest: self.longest,
+            done: false,
+        }
+    }
+    /// Combine private patterns into a bounded reusable template. Neither input
+    /// stream's buffered bytes or completion state is carried into the result.
+    pub fn merged(&self, other: &Self) -> Result<Self> {
+        let unique: std::collections::BTreeSet<_> =
+            self.patterns.iter().chain(&other.patterns).collect();
+        if unique.len() > 1024
+            || unique.iter().map(|value| value.len()).sum::<usize>() > 1024 * 1024
+        {
+            return Err(ErrorCode::LimitExceeded.into());
+        }
+        let mut patterns: Vec<_> = unique.into_iter().cloned().collect();
+        patterns.sort_by_key(|value| std::cmp::Reverse(value.len()));
+        let longest = patterns.first().map_or(1, Vec::len);
+        Ok(Self {
+            patterns,
+            longest,
+            pending: Vec::new(),
+            done: false,
+        })
+    }
     pub fn new(values: &[&[u8]]) -> Result<Self> {
         if values.len() > 16
             || values
@@ -299,6 +328,26 @@ mod tests {
             .into(),
         )
         .unwrap()
+    }
+    #[test]
+    fn private_templates_merge_without_reusing_stream_buffers() {
+        let mut first = Redactor::new(&[b"private-password"]).unwrap();
+        let mut original = first.feed(b"buffered private-", false).unwrap().to_vec();
+        let second = Redactor::new(&[b"private-cookie"]).unwrap();
+        let template = first
+            .merged(&second)
+            .expect("private template merge failed");
+        for _ in 0..2 {
+            assert_eq!(
+                template
+                    .fresh()
+                    .feed(b"private-password private-cookie", true)
+                    .unwrap(),
+                "[redacted] [redacted]"
+            );
+        }
+        original.extend(first.feed(b"password", true).unwrap());
+        assert_eq!(original, b"buffered [redacted]");
     }
     #[test]
     fn prepares_a_private_header_and_redacts_split_echoes() {

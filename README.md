@@ -18,7 +18,9 @@ session admission through SQLCipher key retrieval and verified HTTPS to
 sanitized streamed output. Exercise it without personal credentials or live
 provider requests with `cargo test -p aap-daemon --test process` or the broader
 library suite with `cargo test -p aap-engine`. See the [daemon contract](docs/daemon.md).
-Website login, CONNECT, MCP/TCP, and confinement demonstrations remain pending.
+The controlled form/JSON website flow now works through the engine, with a real
+daemon form-login test using fake credentials and private cookies. CONNECT,
+MCP/TCP, and confinement demonstrations remain pending.
 
 ## Development
 

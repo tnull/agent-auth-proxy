@@ -1,8 +1,9 @@
 # Standalone daemon: initial Linux contract
 
 This describes implemented behavior, not the full planned product. The current
-daemon brokers explicitly submitted API-key requests; it is not yet a general
-HTTP CONNECT proxy, MCP server, password manager, or sandbox launcher.
+daemon brokers explicitly submitted API-key and profiled website requests, with
+password-manager discovery/fake credentials/status/logout. It is not yet a
+general HTTP CONNECT proxy, MCP server, or sandbox launcher.
 
 ## Configuration and startup
 
@@ -55,9 +56,11 @@ sockets. All sockets are owner-only, check peer UID, and use HTTP/1.1 POST with
 | Observation | `/aap/observe/v1/read`, `/aap/observe/v1/ack` | Read/acknowledge all recorded sessions; no session creation or secret access |
 | Per-session ingress | [Local agent API](local-http.md) | One immutable session grant |
 
-Create takes `resources`, `lifetime_seconds` (1–3600), and optional restrictive
+Create takes `resources`, `lifetime_seconds` (1–3600), optional `items`, and restrictive
 `require_approval`/`require_observation` booleans. It returns `session_id` and
 `ingress_socket`. Revoke takes `session_id`; status and reload take `{}`.
+When omitted/null, `items` grants the enrolled items of the permitted profiles;
+an explicit list further restricts those aliases and an empty list grants none.
 Each session receives its own random socket name. Agent-supplied session fields
 or headers cannot select another session. Exposing the whole runtime directory
 to an agent would invalidate the isolation model: a launcher must expose only
@@ -112,3 +115,12 @@ It verifies key injection/echo suppression, authority separation, revocation,
 paired reload, unsafe configuration and unlock refusal, single-daemon exclusion,
 SIGTERM cleanup, SIGKILL restart isolation, vault survival, and expiry.
 No real provider/account credentials or system-wide service/CA changes are used.
+
+The website process test additionally exercises two independent credential-free
+clients, catalog lookup, fake credentials, CSRF virtualization, form submission,
+protected resource access with private cookies, context isolation, logout, and
+sanitized external observations. The engine suite also tests JSON login,
+asynchronous approval, rotation, store lock, attempt limits, and uncertain login.
+See [the engine contract](../crates/aap-engine/README.md) for the supported JSON
+response profile and finite context limits. Neither HTTP CONNECT interception
+nor MCP is established by the explicit local operation tests.

@@ -50,6 +50,8 @@ pub struct Ready {
 #[serde(deny_unknown_fields)]
 pub struct CreateSession {
     pub resources: Vec<String>,
+    #[serde(default)]
+    pub items: Option<Vec<String>>,
     pub lifetime_seconds: u64,
     #[serde(default)]
     pub require_approval: bool,

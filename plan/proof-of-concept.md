@@ -61,12 +61,14 @@ Zero must not mean unlimited, and chunking cannot bypass total-byte limits.
 | --- | --- |
 | Session lifetime | 60 minutes |
 | Placeholder/context lifetime | 10 minutes, capped by session and grant expiry |
+| Retained authentication contexts | 16 per session and 64 per broker, including terminal tombstones until session teardown |
+| Discovery pagination | 50 records per page; at most 64 session/query-bound cursors per session |
 | Tracked operation IDs per session | 4,096; reject new operations when exhausted |
 | Operation tracking and retained result state | 8 MiB per session and 64 MiB globally; retain dispatch/uniqueness state rather than silently forgetting IDs |
 | Active upstream operations per session | 8 |
 | Pending approvals per session | 16, with at most 4 MiB total retained request data |
 | Approval wait | 5 minutes, capped by all relevant lifetimes |
-| Login attempts | 5 per item/session per 10 minutes, plus an operator-level per-item ceiling across sessions |
+| Login attempts | 5 per item/session and 20 per item/broker per 10 minutes; fresh contexts do not reset the counters |
 | Buffered authentication request or response | 256 KiB each |
 | General request body | 1 MiB, unless an explicit supported streaming-upload profile exists |
 | Ordinary streamed response or TCP direction | 32 MiB total; bounded incremental buffers |

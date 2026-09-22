@@ -271,3 +271,48 @@ application login success, redirect handling, MCP, or CONNECT interception.
 The next vertical step must integrate those controls in the engine and prove
 the complete fake-login-to-protected-resource exchange over real TLS; passing
 transform tests alone does not establish end-to-end credential isolation.
+
+## Engine and daemon website integration
+
+The engine now binds authorized catalog search, metadata-only fake-credential
+issuance, private contexts, status/logout, and the controlled website flow to
+the existing session API. Trusted session creation accepts an optional item
+allowlist, enforced for provider injection as well as website credentials.
+Issuance shares execution's ID namespace and tracking budgets. Search cursors,
+context counts/lifetimes, cookie exchanges, login attempts, and private redaction
+templates have explicit finite bounds documented in the engine README.
+
+Twelve new engine tests prove authorized discovery/pagination, identical versus
+conflicting issuance, account/session separation, expiry, context limits,
+rotation/lock/logout invalidation, form and JSON login over real TLS, explicit
+application success, subsequent private-cookie access, CSRF rotation, attempt
+limits across fresh contexts, no password resolution while approval is pending,
+late approval after rotation/logout, concurrent context denial, approval/store
+checks for cookie actions, and uncertain login without redispatch. Password
+resolution is counted. Unknown/unauthorized items cannot release credentials.
+
+The initial vault and website tests failed against unsupported behavior before
+implementation. A targeted race test additionally failed when local logout
+during revalidation revoked another context for the same item; the correction
+limits that broader invalidation to actual store-access/version failure. A new
+redactor-template test failed against its stub and passes without transferring
+buffered stream content between requests.
+
+A sixth real-process test runs catalog lookup through fake form submission and
+protected-resource retrieval via the daemon and independent Rust clients. It
+proves per-session placeholder/jar isolation, logout, and a separately attached
+observation reader that sees neither actual credentials nor placeholders. The
+agent still receives virtual CSRF data needed to complete the form.
+
+All 88 unit tests, six process tests, and the compile-fail doctest pass on Rust
+1.95.0 and 1.88.0. Workspace format/check/Clippy/documentation checks pass on
+1.95.0. No external dependency was added; Tokio's existing test clock feature
+is enabled for deterministic context-expiry coverage.
+
+This establishes the website flow through the **explicit local operation API**,
+not the full W5/W6 gates. MCP tools/stdio, CONNECT interception, the separately
+enrolled post-login redirect transition, remaining adversarial/race/overload
+cases, and complete observation views still need evidence. Website responses
+are currently bounded JSON, and redirects/unsupported profiles fail closed.
+Remote MCP/TCP, actual sandbox confinement, reusable examples, remaining store
+maintenance/recovery, and native macOS custody also remain on the original plan.
