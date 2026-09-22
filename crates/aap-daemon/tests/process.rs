@@ -25,6 +25,8 @@ mod interception;
 mod observation;
 #[path = "process/remote_mcp.rs"]
 mod remote_mcp;
+#[path = "process/tcp.rs"]
+mod tcp;
 
 struct Fixture {
     root: PathBuf,
@@ -83,6 +85,7 @@ impl Fixture {
             interception: None,
             static_hosts: HashMap::from([("fixture.test".into(), vec![origin.address.ip()])]),
             require_approval: false,
+            tcp_profiles: vec![],
             observation: ObservationConfig {
                 acceptance: Acceptance::LocalMemory,
                 max_events: 1024,

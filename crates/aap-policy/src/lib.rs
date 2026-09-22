@@ -5,8 +5,10 @@ use std::net::IpAddr;
 pub mod catalog;
 mod mcp;
 pub mod target;
+pub mod tcp;
 pub use catalog::*;
 pub use target::Target;
+pub use tcp::{TcpLimits, TcpProfile, validate_tcp_profiles};
 
 #[cfg(test)]
 mod mcp_tests;

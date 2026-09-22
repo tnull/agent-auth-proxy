@@ -42,6 +42,7 @@ MCP, not the unlock-key channel. See [the bridge contract](mcp.md).
 | `interception` | Optional public CA certificate and private store reference; see [CONNECT](connect.md) |
 | `static_hosts` | Optional exact canonical hostname to IP list; all addresses still require profile admission |
 | `profiles` | Validated resource profiles and exact permitted routes |
+| `tcp_profiles` | Optional separate credential-free TCP enrollments; defaults to empty, with raw/inspected endpoint and alias overlap rejected; stream execution is not yet implemented |
 | `require_approval` | Default false; true fails closed because no production approval adapter is configured |
 | `observation` | `acceptance: "local_memory"`, finite `max_events`, `max_bytes`, and optional `required` |
 

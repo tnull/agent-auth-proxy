@@ -205,6 +205,7 @@ impl Fixture {
                 }) as Arc<dyn SecretStore>,
             )]),
             resolver: Arc::new(FixedResolver(self.origin.address)),
+            tcp_profiles: vec![],
             transport: Arc::new(HttpsTransport::new([self.origin.certificate.clone()]).unwrap()),
             inspector: Arc::new(aap_providers::TextOnly),
             approval: None,
@@ -230,6 +231,7 @@ fn options() -> SessionOptions {
 mod observation;
 mod proxy;
 mod remote_mcp;
+mod tcp;
 mod vault;
 mod website;
 

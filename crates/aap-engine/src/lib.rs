@@ -28,6 +28,7 @@ mod website;
 pub struct Configuration {
     pub catalog: Catalog,
     pub profiles: Vec<ResourceProfile>,
+    pub tcp_profiles: Vec<aap_policy::TcpProfile>,
     pub stores: HashMap<String, Arc<dyn SecretStore>>,
     pub resolver: Arc<dyn Resolver>,
     pub transport: Arc<dyn Transport>,
@@ -172,6 +173,7 @@ impl Broker {
                 .collect::<Vec<_>>(),
             configuration.catalog.configuration_revision,
         )?;
+        aap_policy::validate_tcp_profiles(&configuration.tcp_profiles, &configuration.profiles)?;
         let mut remote_profiles = HashMap::new();
         for profile in &configuration.profiles {
             if let aap_policy::Authentication::Mcp { tools, .. } = &profile.auth {
@@ -202,12 +204,18 @@ impl Broker {
             || options.resources.len() > 256
             || options.resources.iter().any(|resource| {
                 !resources.insert(resource)
-                    || !self
+                    || !(self
                         .host
                         .configuration
                         .profiles
                         .iter()
                         .any(|profile| &profile.id == resource)
+                        || self
+                            .host
+                            .configuration
+                            .tcp_profiles
+                            .iter()
+                            .any(|profile| &profile.id == resource))
             })
             || options.items.as_ref().is_some_and(|ids| {
                 ids.len() > 1000

@@ -16,6 +16,19 @@ of the same enrolled native credential reference through a non-MCP profile.
 Distinct MCP account bindings remain supported. These are configuration checks,
 not evidence that a caller or engine has implemented remote MCP dispatch.
 
+`TcpProfile` separately enrolls one canonical credential-free endpoint with
+explicit address policy, inspection class, approval/observation requirements,
+and finite byte/time/per-resource limits. `validate_tcp_profiles` rejects
+cross-kind alias collisions, duplicate raw endpoints, and raw access to any
+inspected HTTP/provider/MCP host and port. Both kinds share a 256-profile ceiling.
+The daemon loader and embedded broker invoke this check before creating sessions.
+TCP resources cannot own catalog credentials or be used as HTTP profiles.
+
+`TcpProfile::admit_addresses` checks every candidate address and port, rejects
+scope/flow overrides and substitution of a literal IP, then chooses one address
+without authorizing retries. It performs no DNS or dialing. These enrollment
+contracts do not yet provide an operational TCP relay.
+
 `AddressPolicy::permits_all` checks a complete DNS result. The caller must then
 dial one of those admitted addresses without re-resolution, retain the approved
 TLS name, and enforce session/grant/revocation checks. This crate does not bind

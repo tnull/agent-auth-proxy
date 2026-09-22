@@ -19,6 +19,8 @@ pub struct DaemonConfig {
     pub static_hosts: HashMap<String, Vec<IpAddr>>,
     pub profiles: Vec<ResourceProfile>,
     #[serde(default)]
+    pub tcp_profiles: Vec<aap_policy::TcpProfile>,
+    #[serde(default)]
     pub require_approval: bool,
     pub observation: ObservationConfig,
 }
@@ -133,6 +135,7 @@ pub fn load(directory: &aap_config::PrivateDir) -> aap_types::Result<Loaded> {
         &[configuration.store.alias.as_str()],
         configuration.configuration_revision,
     )?;
+    aap_policy::validate_tcp_profiles(&configuration.tcp_profiles, &configuration.profiles)?;
     aap_config::PrivateDir::open(&configuration.store.directory, false)
         .map_err(|_| ErrorCode::RequestInvalid)?;
     aap_config::PrivateDir::open(&configuration.runtime_directory, false)

@@ -865,3 +865,32 @@ warning-free Clippy pass; all fourteen `aap-types` tests also pass on Rust 1.88.
 No dependency was added. These are framing foundations, not an operational TCP
 endpoint: policy, dialing, engine relay, HTTP upgrade, client, and actual sandbox
 integration remain W7 work.
+
+## TCP enrollment and session grants
+
+`TcpProfile` now validates canonical host/port enrollment, bounded byte/time and
+per-resource concurrency limits, explicit inspection classification, and exact
+address policy. TCP and HTTP resource aliases share one namespace and a combined
+256-profile ceiling. A raw endpoint cannot duplicate another raw endpoint or
+overlap an inspected HTTP/provider/MCP host and port. Catalog credentials cannot
+bind to raw resources. Different service aliases still need operator review;
+canonical-name comparison does not discover remote forwarding behavior.
+
+Complete resolver-result admission rejects wrong ports, unapproved candidates,
+scope/flow overrides, and replacement of a literal IP before selecting one
+address for a future single attempt. No DNS or network work occurs in policy.
+The same checks run during daemon configuration validation/loading and embedded
+broker construction. The optional `tcp_profiles` field defaults to empty for
+existing daemon input; trusted session grants now recognize enrolled raw aliases.
+An HTTP execute request cannot use that raw grant or discover provider items.
+
+Three policy tests, one engine test, and one real daemon process test failed
+before implementation and now pass. The process test specifically observed
+validation accepting the inspected/raw endpoint collision before the loader
+check was added; it now rejects it. Positive fixtures still validate and receive
+a TCP-only session attachment, without upstream requests or secret resolution.
+All 200 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0, with all-target checks on both and warning-free
+stable Clippy/formatting. No dependency was added. Connector, stream execution,
+relay limits/approval/observation, HTTP upgrade, and client integration remain
+pending; configuration acceptance alone does not establish TCP support.

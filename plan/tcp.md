@@ -1,6 +1,7 @@
 # Destination-bound TCP relay
 
-Status: proposed W7 contract, not implemented coverage. Keep the existing
+Status: W7 contract. Enrollment validation and pure framing are implemented;
+the operational relay and its coverage remain pending. Keep the existing
 project and crate names. This extends the [architecture](architecture.md) and
 [common operation contract](protocol-common.md); it introduces neither an
 authentication scheme nor a new secret-store backend.
@@ -55,6 +56,14 @@ behavior; name comparison cannot prove that two different services do not
 forward to one another. DNS servers, forward proxies, tunnel gateways, and
 remote-command services are not part of the first profile. A remote service's
 further traffic remains outside observation, just as for remote MCP tools.
+
+The initial configuration uses a separate `tcp_profiles` collection, empty
+when omitted, with at most 256 HTTP and TCP profiles combined. Resource aliases
+are unique across both collections; one raw endpoint cannot have multiple
+aliases that reset its per-resource ceiling. TCP limits additionally cap active
+streams for that resource within one session at 1–8, still sharing the session's
+eight upstream slots and the broker's global relay limits. Enrollment validation
+does not itself activate a relay or imply application inspection.
 
 Use a distinct logical stream operation, not a less restrictive interpretation
 of existing CONNECT. Ordinary CONNECT continues to select inspected HTTPS and

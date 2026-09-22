@@ -26,7 +26,16 @@ are capped at five minutes and operations at ten minutes/session expiry.
 These are admission ceilings, not production capacity claims. Further quota,
 expiry, restart/reload, and multi-thread race coverage remains part of W1/W4.
 
+## TCP enrollment
+
+The separate `Configuration.tcp_profiles` collection is validated at broker
+construction and participates in session resource grants. A TCP-only grant
+cannot execute HTTP or discover another resource's credential items. The actual
+stream operation, shared relay lifecycle, and connector integration are pending;
+accepting an enrollment is not a claim that the TCP endpoint is available.
+
 ## Remote MCP integration
+
 
 The initial `Authentication::Mcp` path handles pinned initialization, initialized
 acknowledgments, reviewed tool listing/calls, and bounded JSON/SSE responses over

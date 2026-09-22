@@ -37,6 +37,7 @@ fn broker(loaded: &Loaded, store: Arc<SqliteStore>, recorder: Recorder) -> Resul
     Ok(Arc::new(Broker::new(aap_engine::Configuration {
         catalog: loaded.catalog.clone(),
         profiles: configuration.profiles.clone(),
+        tcp_profiles: configuration.tcp_profiles.clone(),
         stores: HashMap::from([(
             configuration.store.alias.clone(),
             store as Arc<dyn SecretStore>,
