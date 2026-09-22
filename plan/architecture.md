@@ -13,6 +13,14 @@ provider API keys, token refresh state, cookie jars, and security state.
 Persistent credentials are backed by a secret store. The daemon exposes a
 scoped password-manager interface through MCP; the store itself, its native
 record identifiers, and its unlock credentials are not exposed to the agent.
+Custody uses a pluggable interface: direct Keychain storage on macOS, encrypted
+SQLite by default elsewhere, or a trusted host-supplied backend. Existing
+accessible Keychain items may be enrolled by reference without duplication.
+See [secret stores](secret-stores.md).
+
+The daemon composes reusable Rust libraries. A trusted application may embed
+the same engine, but doing so brings that process into the credential boundary;
+embedding it inside untrusted agent code does not preserve isolation.
 
 The **operator/control plane** provisions identities, destinations, accounts,
 grants, policy, and revocation. It is separate from agent-facing traffic. The
@@ -54,7 +62,8 @@ traffic is subject to policy too.
 
 ## Architectural responsibilities
 
-These are responsibility boundaries, not a proposed process/crate layout.
+These are responsibility boundaries. Their package mapping is specified in
+[the Rust workspace plan](rust-workspace.md).
 
 | Responsibility | Required behavior |
 | --- | --- |

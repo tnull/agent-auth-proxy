@@ -1,4 +1,4 @@
-# Sources and Loupe findings
+# Sources and integration findings
 
 Research date: 2026-09-22. Sources distinguish published specifications,
 local evidence, and project proposals.
@@ -57,3 +57,41 @@ Scope differences from the inspected Loupe implementation:
 
 These are source-based scope differences, not claims of newly demonstrated
 vulnerabilities in Loupe's intended deployment.
+
+## Local Goose reuse opportunities
+
+Inspected `../goose` at commit
+`bfbbf4463164f5585dcf7c407556fd1acd84d57f`. No files were changed and no Goose
+builds or tests were run. These findings identify integration seams, not a
+claim that the proposed proxy already works with Goose.
+
+| Evidence | Design consequence |
+| --- | --- |
+| [Workspace manifest](../../goose/Cargo.toml) | The inspected workspace declares Rust 1.94.1; evaluate compatibility before setting this project's MSRV |
+| [Release configuration](../../goose/release-plz.toml) | GDK packages have a deliberate release/API boundary; avoid importing private application code as if it were a stable SDK |
+| [Provider contract](../../goose/crates/goose-provider-types/src/base.rs) | Model/messages/tools abstractions already exist; this proxy should not duplicate a conversation or agent SDK |
+| [Provider API client](../../goose/crates/goose-providers/src/api_client.rs) | Configurable host/authentication and request customization support endpoint integration, but do not establish a general replaceable transport interface |
+| [OpenAI provider](../../goose/crates/goose-providers/src/openai.rs) | Provider builder configuration offers a path to a session-bound local model endpoint without real sandbox credentials |
+| [MCP extension configuration](../../goose/crates/goose/src/agents/extension.rs) | Stdio and Streamable HTTP, including a Unix socket option, offer routes to the daemon's MCP surface |
+| [MCP runner](../../goose/crates/goose-mcp/src/mcp_server_runner.rs) | Existing use of the Rust MCP SDK supports isolating that SDK in this project's MCP adapter |
+| [Application configuration](../../goose/crates/goose/src/config/base.rs) | Native/file secret handling is application-owned; use a public store contract, not a dependency on Goose's internal configuration module |
+| [Goose manifest](../../goose/crates/goose/Cargo.toml) | Existing SQLite linkage makes SQLCipher/native dependency compatibility a real embedding check |
+| [Goose SDK manifest](../../goose/crates/goose-sdk/Cargo.toml) | Optional UniFFI integration is relevant to native hosts; it need not become a core Rust or daemon dependency |
+
+Prefer external-daemon integration first: credential-free provider endpoints
+and MCP over an admitted per-session socket/bridge. Later, a trusted host can
+embed the same broker libraries with its own store and observation sink. Neither
+project becomes a workspace/path dependency; verify any concrete integration
+against a pinned, supported host API in a separate scoped change.
+
+## Implementation references
+
+The [workspace design](rust-workspace.md) cites official Cargo, Tokio, Hyper,
+Rustls, and MCP SDK documentation for its proposed stack. Exact dependency
+versions remain an implementation-time resolution and build check.
+
+The [store design](secret-stores.md) cites SQLCipher and rusqlite for encrypted
+SQLite, Apple's Keychain services/item/access-control documentation for native
+custody and reuse limitations, and UniFFI's interface documentation for optional
+native callbacks. Backend selection is a project decision: Keychain holds the
+credential items on macOS, while encrypted SQLite is the non-macOS default.

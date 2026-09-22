@@ -1,13 +1,13 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.2. Reviewed against sources on 2026-09-22.
+Status: proposed design, version 0.3. Reviewed against sources on 2026-09-22.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
 observable streams to independent consumers. The intended implementation
-language is Rust. This plan specifies boundaries, behavior, and protocols;
-crate choices, internal APIs, storage engines, task scheduling, deployment
-scripts, and other implementation decisions are deliberately deferred.
+language is Rust. This plan specifies boundaries, behavior, authentication
+contracts, reusable crate responsibilities, storage backends, and implementation
+milestones. It remains a plan: no Cargo workspace or daemon is implemented yet.
 
 ## Documents
 
@@ -16,9 +16,12 @@ scripts, and other implementation decisions are deliberately deferred.
 | [Architecture](architecture.md) | Trust boundaries, interception coverage, routing, and credential custody |
 | [Common protocol](protocol-common.md) | Agent identity, authorization, request lifecycle, and local contracts |
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
+| [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
 | [Authentication](authentication.md) | Fake passwords, form substitution, private cookies, and API credentials |
 | [Observability](observability.md) | Stream events, redaction, ordering, backpressure, and consumer isolation |
-| [Sources and Loupe findings](references.md) | Standards assessment and evidence from the neighboring project |
+| [Rust workspace](rust-workspace.md) | Reusable crate boundaries, minimal dependencies, daemon and embedding APIs |
+| [Implementation](implementation.md) | Git/Cargo setup, ordered work packages, security checks, and release gates |
+| [Sources and integration findings](references.md) | Standards assessment and evidence from Loupe and Goose |
 
 MUST, MUST NOT, SHOULD, and MAY express requirements of this proposed design.
 They describe the proxy's behavior and local interfaces. Upstream resources
@@ -65,6 +68,10 @@ recipient cannot be eliminated by response filtering.
 | Resource adoption | No server protocol changes; enroll supported sites and their authentication profiles |
 | Existing OAuth/MCP | Daemon acts as the upstream client and holds its tokens; keep local and upstream authorization separate |
 | Password manager | Secret-store-backed item custody; MCP site/item lookup and placeholder credential retrieval |
+| Store selection | Injected `SecretStore` interface; direct Keychain custody on macOS, encrypted SQLite elsewhere |
+| Existing macOS items | Enroll authorized Keychain items in place; no password mirror or promise of access to every app's items |
+| Rust packaging | Reusable libraries with a thin daemon; agent client cannot depend on credential-custody code |
+| Dependencies | Minimal, scoped to the crates that need them; no dedicated secret-wrapper package; UniFFI optional |
 | Form login | Explicit resource profiles; exact parsed-field substitution with random, context-bound fake passwords |
 | Cookies | Private cookie jars partitioned by tenant, agent session, resource profile, and account |
 | Inspection | TLS termination for enrolled clients; separate verified TLS to each approved upstream |
@@ -95,7 +102,8 @@ explicitly classified rather than silently bypassed.
 
 ## Work sequence and exit criteria
 
-These are capability milestones, not a Rust implementation breakdown.
+These are capability milestones. The [implementation plan](implementation.md)
+maps them to Rust crates, work packages, and concrete verification gates.
 
 1. **Review and freeze the design.** Resolve the open decisions below; review
    trust boundaries, item access, placeholder lifecycle, and cookie ownership.

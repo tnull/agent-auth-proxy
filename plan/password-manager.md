@@ -10,8 +10,17 @@ the secret store and real credentials remain outside the sandbox.
 The backing store owns persistent secrets and their versions. Its credentials,
 unlock material, and administrative interface MUST NOT be accessible to the
 agent. The daemon accesses only items permitted by the deployment's store
-identity and the requesting session's grants. Store products, APIs, encryption
-mechanisms, and cache implementation are intentionally not selected here.
+identity and the requesting session's grants. A backend-neutral `SecretStore`
+interface separates custody from authentication behavior. The macOS daemon
+stores credentials directly in Keychain; other platforms default to encrypted
+SQLite. Optional native-host integration may use UniFFI. See
+[secret stores](secret-stores.md) for the interface and backend requirements.
+
+Trusted macOS setup may enroll an existing accessible Keychain item without
+copying its password. Such enrollment is read/use-only by default and requires
+both native access permission and a proxy resource/grant binding. The MCP tools
+below search only the authorized enrolled catalog, not the user's entire
+Keychain. Unenrolling an existing item does not delete it from Keychain.
 
 Passwords, API keys, and access/refresh tokens are managed through this boundary.
 The store supplies secret material only to the trusted daemon. Interception-CA
