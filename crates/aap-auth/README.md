@@ -74,3 +74,24 @@ sanitizes the response body. Other statuses/locations fail; the ordinary
 `sanitize_response` path still rejects every redirect. The helper neither
 decides login success nor follows the Location. An additional test covers this
 narrow transform and confirms the default path remains redirect-denying.
+
+## Observation-only placeholder suppression
+
+`placeholders::PlaceholderRedactor` suppresses recognizable complete username,
+password, and CSRF placeholders, including quoted values from another context.
+It recognizes their canonical 51-byte shape directly, through mixed percent
+or JSON ASCII escapes, and as an individually base64-encoded token. It does
+not resolve a store, validate a context, or grant authentication authority.
+Arbitrary encodings/covert channels remain outside this bounded recognition.
+
+Each feed accepts at most 256 KiB and retains at most 305 undecided source
+bytes. The returned consumed-source count lets a streaming caller retain that
+prefix until required sanitized observation is accepted, then deliver the
+unchanged original agent bytes. Observation offsets count sanitized bytes,
+not consumed source bytes. A completed redactor cannot be reused.
+
+The engine uses this additional transform only for observation, including
+provider prompts/responses and fully inspected website views. It does not
+remove an agent's legitimate placeholder from its provider response. Unit
+tests exercise every split boundary of the supported representations, ordinary
+data preservation, and finite retained state.

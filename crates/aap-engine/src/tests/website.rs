@@ -226,6 +226,53 @@ fn login_body(login: &Login, csrf: &str, encoding: LoginEncoding) -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn website_observation_hides_quoted_placeholders_outside_its_context() {
+    use aap_observe::{Direction, View};
+    let foreign = aap_auth::login::Placeholders::new().unwrap();
+    let encoded = foreign.password().replace("aap_", "\\u0061ap_");
+    let mut fixture = Fixture::new().await;
+    let mut reply = Reply::body(format!(r#"{{"csrf":"private-csrf","quote":"{encoded}"}}"#));
+    reply
+        .headers
+        .push(("content-type".into(), "application/json".into()));
+    fixture.origin = Origin::spawn(reply).await;
+    let broker = Broker::new(website_configuration(&fixture, LoginEncoding::Form).await).unwrap();
+    let session = broker.create_session(options()).unwrap();
+    let login = session.get_login(issuance(&fixture)).await.unwrap();
+    let input = request(&fixture, &login, "GET", "/login", &[]);
+    let id = input.request_id.clone();
+    let body = session
+        .execute(input)
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["quote"],
+        foreign.password()
+    );
+    let records: Vec<_> = fixture
+        .recorder
+        .read(None, 256)
+        .unwrap()
+        .records
+        .into_iter()
+        .filter(|record| record.event.request_id.as_deref() == Some(&id))
+        .collect();
+    for view in [View::Agent, View::Upstream] {
+        let observed = super::observation::content(&records, Direction::Inbound, view);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&observed).unwrap()["quote"],
+            "[redacted]",
+            "foreign placeholder leaked through website observation"
+        );
+    }
+}
+
+#[tokio::test]
 async fn website_observation_distinguishes_substitution_and_private_cookie_capture() {
     use aap_observe::{Data, Direction, View};
     let mut fixture = Fixture::new().await;

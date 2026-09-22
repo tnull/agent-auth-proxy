@@ -55,6 +55,13 @@ the received body, while the agent observation reflects CSRF virtualization
 and response sanitization. Current-context placeholders are suppressed from
 both website observations. Cookies are captured before body observation.
 
+A further observation-only filter recognizes complete username/password/CSRF
+placeholders even when quoted outside their context, including in provider
+prompts and responses. It accepts their canonical raw shape, mixed percent or
+JSON ASCII escapes, and individually base64-encoded tokens. This does not
+authorize their use, query a secret store, or rewrite the original application
+traffic. Arbitrary encodings are not covered by this bounded recognizer.
+
 These are logical, transformed views, never raw credential-bearing captures.
 Known-value suppression is bounded defense in depth, not proof that a hostile
 authorized recipient cannot invent a new encoding of a secret. Prompts and
@@ -67,6 +74,15 @@ The recorder accepts up to sixteen events / 256 KiB per atomic update, with
 chunks and final view endings use atomic updates. Required-mode failure stops
 dispatch or delivery; it cannot undo remote effects or bytes already delivered.
 Acceptance currently means local bounded memory, not durable or remote receipt.
+
+Placeholder recognition retains at most 305 undecided bytes between feeds.
+For streamed responses, the corresponding original agent suffix is retained
+as well: each source prefix is released only after its redacted observation is
+accepted. This preserves required-mode ordering without dropping placeholders
+from the actual agent response or collecting an entire provider stream.
+Tiny trailing responses may wait for the next bytes or EOF within the existing
+transport deadlines. Cancellation and observation failure discard undecided
+bytes and report incomplete execution.
 
 Dropping or cancelling a response attempts explicit incomplete endings for
 started streams and closes both logical views. Successful completion is not
@@ -81,7 +97,6 @@ privileged owner-wide reader, not a scoped multi-tenant subscription service.
 
 Still pending: separately authorized/scoped consumers and their quotas;
 physical TCP/TLS connection lifecycle and tunnel/subrequest correlation;
-remote MCP and TCP coverage; parsed message convenience events; expanded auth
-state events; and cross-protocol placeholder suppression, including a website
-placeholder quoted inside a provider prompt. These limitations prevent claiming
-complete communication observation or checking off W7.
+remote MCP and TCP coverage; parsed message convenience events; and expanded
+auth state events. These limitations prevent claiming complete communication
+observation or checking off W7.

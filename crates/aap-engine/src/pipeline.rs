@@ -1,13 +1,13 @@
 use super::observation::{StreamState, headers, request_headers};
 use super::*;
-use aap_auth::{PreparedKey, sanitize_response};
+use aap_auth::{PreparedKey, placeholders::PlaceholderRedactor, sanitize_response};
 use aap_observe::{Data, Decision, Direction, Flow, FlowContext, Protocol, View};
 use aap_policy::{Authentication, Target, requires_approval};
 use aap_secrets::ItemRef;
 use aap_transport::{Endpoint, Limits};
 use aap_types::profile::ProviderKind;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use http_body::{Body as BodyTrait, Frame};
 use http_body_util::{BodyExt, Full};
 use std::{
@@ -159,6 +159,10 @@ impl Session {
                         body,
                         guard,
                         cancellation,
+                        observer: PlaceholderRedactor::default(),
+                        unobserved: BytesMut::new(),
+                        eof: false,
+                        observation_ended: false,
                     }
                     .boxed_unsync()
                 }))
@@ -374,13 +378,15 @@ impl Session {
             },
         )?;
         let mut outbound = redactor.fresh();
+        let mut placeholders = PlaceholderRedactor::default();
         for (chunk, end) in outgoing
             .body()
             .chunks(32 * 1024)
             .map(|chunk| (chunk, false))
             .chain(std::iter::once((&[][..], true)))
         {
-            guard.content_both(Direction::Outbound, &outbound.feed(chunk, end)?)?;
+            let (safe, _) = placeholders.feed(&outbound.feed(chunk, end)?, end)?;
+            guard.content_both(Direction::Outbound, &safe)?;
         }
         guard.record_both(
             Direction::Outbound,
@@ -558,6 +564,24 @@ struct TrackedBody {
     body: aap_types::Body,
     guard: Guard,
     cancellation: BoxFuture<'static, ()>,
+    observer: PlaceholderRedactor,
+    unobserved: BytesMut,
+    eof: bool,
+    observation_ended: bool,
+}
+impl TrackedBody {
+    fn observe(&mut self, bytes: &[u8], end: bool) -> Result<Option<Bytes>> {
+        self.unobserved.extend_from_slice(bytes);
+        let (safe, consumed) = self.observer.feed(bytes, end)?;
+        if consumed > self.unobserved.len() {
+            return Err(ErrorCode::ObservationUnavailable.into());
+        }
+        // The original prefix becomes deliverable only after its sanitized
+        // observation was accepted. Retain the undecided suffix (at most 305
+        // bytes) rather than releasing data ahead of required observation.
+        self.guard.content_both(Direction::Inbound, &safe)?;
+        Ok((consumed != 0).then(|| self.unobserved.split_to(consumed).freeze()))
+    }
 }
 impl BodyTrait for TrackedBody {
     type Data = Bytes;
@@ -570,34 +594,57 @@ impl BodyTrait for TrackedBody {
         if this.guard.finished {
             return Poll::Ready(None);
         }
-        if this.cancellation.as_mut().poll(context).is_ready() {
-            this.guard.fail(ErrorCode::OutcomeUnknown);
-            return Poll::Ready(Some(Err(ErrorCode::OutcomeUnknown.into())));
-        }
-        match Pin::new(&mut this.body).poll_frame(context) {
-            Poll::Ready(Some(Ok(frame))) => {
-                if let Some(bytes) = frame.data_ref()
-                    && !this.guard.response_recorded
-                    && let Err(error) = this.guard.content_both(Direction::Inbound, bytes)
-                {
-                    this.guard.fail(error.code);
-                    return Poll::Ready(Some(Err(error)));
+        for _ in 0..16 {
+            if this.cancellation.as_mut().poll(context).is_ready() {
+                this.guard.fail(ErrorCode::OutcomeUnknown);
+                return Poll::Ready(Some(Err(ErrorCode::OutcomeUnknown.into())));
+            }
+            if this.eof {
+                if !this.guard.response_recorded && !this.observation_ended {
+                    this.observation_ended = true;
+                    match this.observe(&[], true) {
+                        Ok(Some(bytes)) => return Poll::Ready(Some(Ok(Frame::data(bytes)))),
+                        Ok(None) => {}
+                        Err(error) => {
+                            this.guard.fail(error.code);
+                            return Poll::Ready(Some(Err(error)));
+                        }
+                    }
                 }
-                Poll::Ready(Some(Ok(frame)))
-            }
-            Poll::Ready(Some(Err(error))) => {
-                this.guard.fail(error.code);
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Ready(None) => {
                 if let Err(error) = this.guard.complete() {
                     this.guard.fail(error.code);
                     return Poll::Ready(Some(Err(error)));
                 }
-                Poll::Ready(None)
+                return Poll::Ready(None);
             }
-            Poll::Pending => Poll::Pending,
+            match Pin::new(&mut this.body).poll_frame(context) {
+                Poll::Ready(Some(Ok(frame))) => {
+                    if this.guard.response_recorded {
+                        return Poll::Ready(Some(Ok(frame)));
+                    }
+                    let Some(bytes) = frame.data_ref() else {
+                        this.guard.fail(ErrorCode::InspectionUnavailable);
+                        return Poll::Ready(Some(Err(ErrorCode::InspectionUnavailable.into())));
+                    };
+                    match this.observe(bytes, false) {
+                        Ok(Some(bytes)) => return Poll::Ready(Some(Ok(Frame::data(bytes)))),
+                        Ok(None) => {}
+                        Err(error) => {
+                            this.guard.fail(error.code);
+                            return Poll::Ready(Some(Err(error)));
+                        }
+                    }
+                }
+                Poll::Ready(Some(Err(error))) => {
+                    this.guard.fail(error.code);
+                    return Poll::Ready(Some(Err(error)));
+                }
+                Poll::Ready(None) => this.eof = true,
+                Poll::Pending => return Poll::Pending,
+            }
         }
+        context.waker().wake_by_ref();
+        Poll::Pending
     }
     fn is_end_stream(&self) -> bool {
         self.guard.finished

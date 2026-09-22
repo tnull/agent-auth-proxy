@@ -550,12 +550,14 @@ impl Session {
 }
 fn redact(redactor: &mut Redactor, body: &[u8]) -> Result<Vec<u8>> {
     let mut output = Vec::new();
+    let mut placeholders = aap_auth::placeholders::PlaceholderRedactor::default();
     for (chunk, end) in body
         .chunks(32 * 1024)
         .map(|chunk| (chunk, false))
         .chain(std::iter::once((&[][..], true)))
     {
-        output.extend(redactor.feed(chunk, end)?);
+        let (safe, _) = placeholders.feed(&redactor.feed(chunk, end)?, end)?;
+        output.extend(safe);
         if output.len() > 256 * 1024 {
             return Err(ErrorCode::LimitExceeded.into());
         }

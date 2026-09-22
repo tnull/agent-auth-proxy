@@ -1,6 +1,7 @@
 //! Private authentication transformations; no independent network access.
 pub mod cookies;
 pub mod login;
+pub mod placeholders;
 #[cfg(test)]
 mod redirect_tests;
 use aap_secrets::{Field, Snapshot};

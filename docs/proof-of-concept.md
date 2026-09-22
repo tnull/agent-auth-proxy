@@ -463,3 +463,29 @@ acceptance work remain open. This slice adds no dependencies.
 All 120 unit tests, ten process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
 warning-free Clippy, and warning-free public documentation pass on 1.95.0.
+
+## Quoted placeholder observation
+
+Recognizable placeholders are now suppressed from observations even when quoted
+in a provider prompt/response or another website context. Supported forms are
+raw tokens, mixed percent/JSON ASCII escapes, and individual base64 encodings.
+This is an observation-only transform: neither the upstream request nor the
+agent's permitted response is rewritten by it. No credential store lookup or
+cross-context authority is introduced.
+
+The streaming recognizer has at most 305 undecided source bytes. The engine
+retains the corresponding agent bytes until their observation is accepted,
+so required recording cannot lag behind delivery. EOF flushes the remainder;
+cancellation or recording failure cannot report successful completion.
+
+Recognizer and provider/website tests first failed before their corresponding
+changes, then passed. Every split boundary is exercised for each supported
+representation. Additional coverage checks that a partial response has already
+been recorded in both views when delivered and that recording loss stops the
+remaining response. Arbitrary encodings/covert channels remain outside this
+bounded recognizer. The outstanding transport, consumer isolation, confinement,
+reuse, and store-maintenance work is unchanged. No dependencies were added.
+
+All 125 unit tests, ten process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target checks pass on both; formatting, warning-free
+Clippy, and warning-free public documentation pass on 1.95.0.
