@@ -95,14 +95,15 @@ bound yields a safe error or explicit incomplete stream, never silent success.
    secret use until these checks pass.
 2. **Provider vertical slice (W3–W4):** one fixture end to end through the
    daemon, then a second profile; private per-session/operator sockets, safe
-   streams, cancellation, restart invalidation, and baseline observation.
+   streams, cancellation, restart invalidation, baseline observation, and the
+   first actual-sandbox [confinement proof](deployment.md).
 3. **Password-manager vertical slice (W5–W6):** MCP search through fake form
    submission to protected resource access; repeat with the JSON variant and
    with a second isolated session. Prove logout, rotation, store lock/outage,
    CSRF rotation, cookie refresh/deletion, and no password/cookie echoes.
 4. **Coverage and reuse (W7–W8):** real remote MCP mediation and TCP fixture,
    external observation subscriber, overload/gap/required-mode tests, reusable
-   embedding/client example, and actual sandbox egress-denial tests.
+   embedding/client example, and confinement-suite reruns for all added adapters.
 5. **Native custody (W9):** implement the isolated macOS adapter where feasible;
    list native access, signing, lock, and existing-item tests requiring macOS.
    A Linux test pass never establishes Keychain runtime compatibility.
@@ -112,9 +113,11 @@ Test uncertain delivery with a server that records reception and then drops
 the connection. Assert that the daemon reports uncertainty without dispatching
 again, rather than treating a transport exception as proof of non-execution.
 
-The confinement suite attempts direct IPv4, IPv6, DNS, alternate sockets, host
-filesystem/control access, and inherited-descriptor escape from the actual
-sandbox. If the test host lacks the necessary isolation facilities, report
+The [confinement suite](deployment.md#confinement-acceptance-suite) attempts
+direct IPv4, IPv6, DNS, alternate sockets, host filesystem/control/process access,
+descendant escape, and inherited-descriptor escape from the actual sandbox.
+Use live positive controls so absent services cannot produce false passes.
+If the test host lacks the necessary isolation facilities, report
 that release gate as unverified; a skipped test is not a pass. Proxy-only tests
 still establish narrower behavior but cannot establish complete interception.
 

@@ -10,7 +10,8 @@ demonstration limits.
 
 ## Initial release boundary
 
-Target a Linux host with externally enforced agent sandboxes first. Provide
+Target a Linux host with externally enforced agent sandboxes first, following
+the [deployment and confinement contract](deployment.md). Provide
 session-bound local ingress, provider credential injection, MCP item lookup and
 fake credentials, supported form logins, private cookie sessions, and redacted
 observation. Start with a small declared set of provider routes and login sites.
@@ -293,7 +294,7 @@ Keychain tests run separately on macOS using isolated test items/keychains.
 | Observation | Secrets split across chunks, safe error/redirect content, backpressure, gaps/resume, required-mode failures |
 | Daemon | Separate control/agent sockets, restart invalidation, graceful shutdown, private configuration ownership/mode/path checks, atomic reload |
 | Embedding | Public API consumer compiles, no daemon/global side effects, shared behavior with daemon mode |
-| Confinement | Direct IPv4/IPv6/DNS/alternate-socket egress and access to host/control/other-session resources denied |
+| Confinement | Actual-sandbox network, filesystem, process, descriptor, and descendant probes with live positive controls; see the [acceptance matrix](deployment.md#confinement-acceptance-suite) |
 
 Fuzz security-relevant parsers and transformations: origins/authorities, HTTP
 framing adapters, form/JSON selectors, cookies, and streaming redaction. Use
@@ -336,6 +337,9 @@ clean build.
 
 ## Remaining implementation choices
 
+- Select the production sandbox launcher and packaging; verify the exact
+  deployment against the [confinement contract](deployment.md). Start its
+  provider-path proof in W4 and rerun it for each added adapter in W5-W7.
 - Select the SQLCipher build/linking approach and trusted database-key
   provisioning mechanism; validate native dependency compatibility for embedders.
 - Validate direct `security-framework` bindings for the macOS daemon. Record accessible existing-item

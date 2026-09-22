@@ -60,6 +60,11 @@ QUIC/UDP is denied in the baseline; HTTP clients must use supported transports.
 The daemon's own DNS, metadata, authorization, redirect, and secret-store
 traffic is subject to policy too.
 
+The [deployment contract](deployment.md) assigns OS confinement to a trusted
+launcher and defines the actual bypass tests. Distinguish credential brokerage,
+confined external communication, and inspected protocol coverage in claims;
+none alone proves the other two. The daemon is not itself a sandbox launcher.
+
 ## Architectural responsibilities
 
 These are responsibility boundaries. Their package mapping is specified in

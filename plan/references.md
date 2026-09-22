@@ -86,6 +86,15 @@ against a pinned, supported host API in a separate scoped change.
 
 ## Implementation references
 
+The [deployment contract](deployment.md) uses the Linux man-pages descriptions
+of [network namespaces](https://man7.org/linux/man-pages/man7/network_namespaces.7.html)
+and [Unix-domain sockets](https://man7.org/linux/man-pages/man7/unix.7.html), plus
+kernel documentation for [Yama process restrictions](https://docs.kernel.org/admin-guide/LSM/Yama.html)
+and [no new privileges](https://docs.kernel.org/userspace-api/no_new_privs.html).
+These describe OS mechanisms, not a certification of the proposed deployment.
+The isolation profile, responsibility split, and acceptance gates are project
+requirements that still need tests against the selected launcher and host.
+
 The [workspace design](rust-workspace.md) cites official Cargo, Tokio, Hyper,
 Rustls, and MCP SDK documentation for its proposed stack. Exact dependency
 versions remain an implementation-time resolution and build check.

@@ -16,6 +16,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | Document | Purpose |
 | --- | --- |
 | [Architecture](architecture.md) | Trust boundaries, interception coverage, routing, and credential custody |
+| [Deployment and confinement](deployment.md) | Trusted launcher boundary, Linux sandbox requirements, attachment lifecycle, and bypass acceptance suite |
 | [Common protocol](protocol-common.md) | Agent identity, authorization, request lifecycle, and local contracts |
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
 | [MCP adapter](mcp.md) | Pinned local tool binding, bounded HTTP results, asynchronous status/cancellation, and bridge isolation |
@@ -150,8 +151,9 @@ gates. It allows implementation to proceed without claiming production support.
 The following still require choices or evidence before a real deployment:
 
 - Which agent runners and sandbox platforms define the first enforceable
-  deployment? A host-local boundary is assumed here; a remote ingress trust
-  protocol is a separate design task.
+  deployment? The [deployment contract](deployment.md) defines the first Linux
+  boundary and its tests; production launcher selection remains open. A remote
+  ingress trust protocol is a separate design task.
 - Which initial model API surfaces, MCP transports, TCP protocols, and login
   sites must be supported? Each needs an explicit capability and limit profile.
 - Which operations require human approval, and which consumer outages must
