@@ -113,6 +113,8 @@ bound yields a safe error or explicit incomplete stream, never silent success.
 4. **Coverage and reuse (W7–W8):** real remote MCP mediation and TCP fixture,
    external observation subscriber, overload/gap/required-mode tests, reusable
    embedding/client example, and confinement-suite reruns for all added adapters.
+   Apply the [reuse acceptance matrix](reuse.md#shared-behavioral-suite) to both
+   the embedded and daemon paths; check independent consumer dependency closures.
 5. **Native custody (W9):** implement the isolated macOS adapter where feasible;
    list native access, signing, lock, and existing-item tests requiring macOS.
    A Linux test pass never establishes Keychain runtime compatibility.

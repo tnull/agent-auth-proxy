@@ -317,6 +317,11 @@ Use pinned Git revisions for early external consumption; later publish only
 the deliberate reusable API set. Never depend on a moving development branch
 for a security-sensitive integration.
 
+Follow the [reuse acceptance plan](reuse.md) for independent client, embedded
+SQLCipher, and host-supplied adapter fixtures. It defines the shared behavioral
+suite and dependency checks needed to distinguish a reusable implementation
+from examples that compile only inside this workspace.
+
 Reusing the libraries does not itself enforce every tool's egress. The embedding
 host must supply the same sandbox, process, and socket restrictions required by
 the standalone deployment. Demonstrate that property separately from showing

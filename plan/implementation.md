@@ -259,6 +259,13 @@ conformance scenarios against in-process and daemon transports. Package an
 example external consumer outside the workspace so missing exports, dependency
 leaks, and accidental workspace-only assumptions are detectable.
 
+The [reuse acceptance plan](reuse.md) specifies the three consumer fixtures,
+host/engine lifecycle ownership, shared scenario matrix, independent dependency
+checks, and ordered W8 delivery. Start its provider/website examples before W7
+finishes, then include remote MCP and TCP before closing the reuse milestone.
+Compilation alone is insufficient, and successful embedding does not establish
+the separate OS-confinement guarantee.
+
 Do not modify Goose merely to prove the libraries compile. Use its documented
 integration opportunities as design inputs; add a real Goose integration in a
 separate scoped change once the reusable APIs and daemon surface work.
