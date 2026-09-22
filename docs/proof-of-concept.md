@@ -74,3 +74,12 @@ checks also report those draft Rust files. No Rust source was changed during
 this planning continuation, and no commit was made with these checks failing.
 The catalog JSON example parses, relative document links resolve, and the
 planning diff has no whitespace errors.
+
+Policy implementation: the unfinished catalog/target/approval stubs are now
+implemented. The typed catalog carries the configuration revision, validates
+store/profile/item bindings, and rejects mismatched revisions. Exact route,
+header, complete-DNS-result, form-profile, and restrictive approval checks were
+verified red against their initial implementations and then green. All 15
+current unit tests pass, as do workspace format/check/Clippy. Session binding,
+the configuration-file loader, approval execution, and store access remain
+separate pending implementation work; W1 is not complete yet.

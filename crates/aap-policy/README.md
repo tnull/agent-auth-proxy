@@ -2,6 +2,22 @@
 
 Pure authorization and destination rules without networking or secret access.
 
+Validate a `Catalog` against trusted profiles, store aliases, and the matching
+configuration revision before admission. Profiles use exact HTTPS origin,
+method, path, and query rules, bounded bodies, and explicit application-header
+allowlists. Form profiles additionally bind login/CSRF fields and application
+success evidence. Approval requirements compose restrictively.
+
+`AddressPolicy::permits_all` checks a complete DNS result. The caller must then
+dial one of those admitted addresses without re-resolution, retain the approved
+TLS name, and enforce session/grant/revocation checks. This crate does not bind
+sessions, perform safe configuration-file I/O, or enforce network isolation.
+
+The conservative first target grammar requires ASCII URIs (use an explicitly
+enrolled ASCII/punycode host and percent-encoded UTF-8 paths). It rejects dot
+normalization, encoded path separators, semicolon path parameters, and repeated
+slashes rather than guessing how an upstream application interprets them.
+
 The initial destination classifier conservatively excludes special-purpose,
 private, documentation, transition, and multicast address ranges. Exact private
 destinations must be explicitly enrolled by a trusted host; this classifier

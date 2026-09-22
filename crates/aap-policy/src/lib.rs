@@ -2,6 +2,11 @@
 
 use std::net::IpAddr;
 
+pub mod catalog;
+pub mod target;
+pub use catalog::*;
+pub use target::Target;
+
 /// Public unicast destinations only; special destinations need exact enrollment.
 pub fn is_public_address(address: IpAddr) -> bool {
     match address {
