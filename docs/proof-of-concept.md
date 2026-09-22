@@ -34,6 +34,12 @@ them with a generic request example does not complete this proof.
 - Do not modify Goose or Loupe. Their integration seams remain research inputs.
 - Native macOS runtime checks may remain explicitly unverified on this Linux host.
 - Leave product/license/production enrollment questions for the final handoff.
+- Catalog metadata lives in private versioned JSON, separate from credentials:
+  user-owned `0700` directories and `0600` files, safe descriptor-based opening,
+  private atomic writes, and rejection of unsafe modes, links, and ownership.
+- Preserve asynchronous operation approval separately from store unlock.
+  Global/session, item, and action requirements combine restrictively. Signing
+  and UI are later adapters; approval-required requests fail closed without one.
 
 ## Evidence log
 
@@ -46,3 +52,10 @@ This host's Rustup installation is read-only. Local commands use
 `RUSTUP_TOOLCHAIN=stable`, whose installed compiler is exactly the pinned
 1.95.0 version. This is a local invocation override, not a changed toolchain
 requirement or an unverified claim that another compiler passed.
+
+Core test-first checks: ID canonicalization, duplicate JSON members at every
+depth, and special-purpose destination rejection failed against their initial
+implementations before being implemented. Random-ID and authority-field rejection
+tests likewise failed first. All five checks now pass on Rust 1.95.0, alongside
+workspace check and Clippy. The async service and credential-free DTOs are
+defined; the engine that enforces their complete contract is still pending.

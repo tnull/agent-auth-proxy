@@ -16,6 +16,15 @@ publish = false
 aap-types = { path = "crates/aap-types" }
 aap-policy = { path = "crates/aap-policy" }
 aap-secrets = { path = "crates/aap-secrets" }
+base64 = "0.22"
+getrandom = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = { version = "2", features = ["serde"] }
+http = "1"
+bytes = "1"
+http-body = "1"
+http-body-util = "0.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
