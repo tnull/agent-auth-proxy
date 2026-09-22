@@ -183,7 +183,17 @@ impl Recorder {
         Ok(())
     }
     pub fn read(&self, cursor: Option<&Cursor>, limit: usize) -> Result<Batch> {
-        if limit == 0 || limit > 1024 {
+        self.read_bounded(cursor, limit, 64 * 1024 * 1024 + 2048)
+    }
+    /// Read a count- and encoded-byte-bounded page without advancing past
+    /// retained records that do not fit. The budget includes the batch envelope.
+    pub fn read_bounded(
+        &self,
+        cursor: Option<&Cursor>,
+        limit: usize,
+        max_bytes: usize,
+    ) -> Result<Batch> {
+        if limit == 0 || limit > 1024 || !(512..=64 * 1024 * 1024 + 2048).contains(&max_bytes) {
             return Err(ErrorCode::RequestInvalid.into());
         }
         let state = self
@@ -209,13 +219,23 @@ impl Recorder {
         });
         let mut records = Vec::new();
         let mut position = first;
-        for (record, _, _) in &state.records {
+        // The fixed envelope has a canonical 22-byte epoch and bounded numeric
+        // fields. Charge commas as well as the previously serialized record.
+        let mut bytes = 512;
+        for (record, record_bytes, _) in &state.records {
             if record.event_id < first {
                 continue;
             }
             if record.event_id != position || records.len() == limit {
                 break;
             }
+            if bytes + record_bytes + 1 > max_bytes {
+                if records.is_empty() {
+                    return Err(ErrorCode::LimitExceeded.into());
+                }
+                break;
+            }
+            bytes += record_bytes + 1;
             records.push(record.clone());
             position += 1;
         }
@@ -267,6 +287,50 @@ mod tests {
             view: View::Agent,
             data: Data::ResponseStart { status: 200 },
         }
+    }
+    #[test]
+    fn byte_bounded_pages_resume_without_losing_records() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 8, 32 * 1024).unwrap();
+        for _ in 0..4 {
+            let mut input = event();
+            // Escaping expands this payload: budgeting raw field lengths is wrong.
+            input.data = Data::RequestStart {
+                method: "GET".into(),
+                target: "\u{0001}".repeat(180),
+            };
+            recorder.record(input, true).unwrap();
+        }
+        let first = recorder
+            .read_bounded(None, 8, 2048)
+            .expect("bounded page must fit one record");
+        assert_eq!(first.records.len(), 1);
+        assert_eq!(first.cursor.after, 1);
+        assert!(serde_json::to_vec(&first).unwrap().len() <= 2048);
+        let second = recorder.read_bounded(Some(&first.cursor), 8, 2048).unwrap();
+        assert_eq!(second.records[0].event_id, 2);
+        assert!(second.gap.is_none());
+        assert!(
+            matches!(recorder.read_bounded(None, 8, 512), Err(error) if error.code == ErrorCode::LimitExceeded)
+        );
+        assert!(
+            matches!(recorder.read_bounded(None, 8, 0), Err(error) if error.code == ErrorCode::RequestInvalid)
+        );
+        let remaining = recorder
+            .read_bounded(Some(&second.cursor), 1, 2048)
+            .unwrap();
+        assert_eq!(remaining.records.len(), 1);
+        assert_eq!(remaining.records[0].event_id, 3);
+        let last = recorder
+            .read_bounded(Some(&remaining.cursor), 8, 2048)
+            .unwrap();
+        assert_eq!(last.records[0].event_id, 4);
+        assert!(
+            recorder
+                .read_bounded(Some(&last.cursor), 8, 512)
+                .unwrap()
+                .records
+                .is_empty()
+        );
     }
     #[test]
     fn bounded_retention_exposes_gaps_and_epoch_changes() {

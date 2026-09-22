@@ -208,3 +208,33 @@ test-support packages. This is adapter evidence, not yet a standalone daemon
 or sandbox demonstration. The workspace has 66 unit tests plus the compile-fail
 doctest; build, tests, formatting, and Clippy pass on Rust 1.95.0. The same
 66 unit tests and doctest also pass on Rust 1.88.0.
+
+## Standalone provider daemon
+
+`aap-daemon` now composes the existing libraries into the actual Linux binary.
+Five process tests use a fresh SQLCipher vault, private sockets, real local TLS,
+an independent client, and a separately attached observation reader. They cover
+private key injection and sanitized output, authority separation, revocation,
+invalid/valid configuration reload, unsafe-file/key/startup refusal, exclusive
+runtime ownership, graceful shutdown, abrupt death/restart, and session expiry.
+Restart keeps encrypted credentials but invalidates old session attachments and
+operation lookup. The initial process tests failed against the daemon stub.
+
+Observation export additionally bounds encoded page bytes before cloning
+records. A new test failed against that API's stub, then passed with JSON
+escaping, cursor continuation, count limits, and oversized-record refusal.
+The operator contract, current configuration fields, reload/restart behavior,
+and explicit limitations are documented in [daemon.md](daemon.md).
+
+Workspace compilation, formatting, Clippy, and documentation builds pass on
+Rust 1.95.0. All 67 unit tests, five process tests, and the compile-fail doctest
+pass on both Rust 1.95.0 and the Rust 1.88.0 MSRV. The only newly introduced
+external package is Tokio's `signal-hook-registry` dependency for daemon-owned
+termination signals; no credential custody was added to the agent client.
+
+W4 remains unchecked: this proves the explicit local operation API, not
+provider-compatible proxy mounts, CONNECT, full admission/overload conformance,
+or actual sandbox egress denial. W5/W6 website credentials, MCP, private cookie
+sessions, remaining W7 transports/observation, reuse examples, and macOS native
+custody are still pending. Required observation currently accepts into bounded
+local memory only; it is not a durable collector-delivery guarantee.

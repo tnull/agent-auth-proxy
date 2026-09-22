@@ -7,8 +7,8 @@ MCP traffic, holds upstream credentials outside the agent sandbox, and exports
 observable streams to independent consumers. The intended implementation
 language is Rust. This plan specifies boundaries, behavior, authentication
 contracts, reusable crate responsibilities, storage backends, and implementation
-milestones. A starter Cargo workspace and initial contracts exist; the daemon
-and security guarantees are not implemented or verified yet. See the
+milestones. The workspace now includes an initial provider-brokerage daemon;
+the complete proxy and its security guarantees are not yet verified. See the
 [implementation evidence](../docs/proof-of-concept.md) for actual progress.
 
 ## Documents

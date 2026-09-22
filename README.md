@@ -13,11 +13,12 @@ The planned daemon defaults are native Keychain on macOS and encrypted SQLite
 elsewhere. SQLCipher custody is implemented; the macOS adapter is still pending.
 The store interface remains backend-neutral.
 
-The first library-level provider slice now runs from session admission through
-SQLCipher key retrieval and verified HTTPS to sanitized streamed output. Exercise
-it without personal credentials or live provider requests with
-`cargo test -p aap-engine`. The daemon, website login flow, MCP, and confinement
-demonstration are not yet implemented.
+The first provider slice now runs through a standalone Linux daemon, from
+session admission through SQLCipher key retrieval and verified HTTPS to
+sanitized streamed output. Exercise it without personal credentials or live
+provider requests with `cargo test -p aap-daemon --test process` or the broader
+library suite with `cargo test -p aap-engine`. See the [daemon contract](docs/daemon.md).
+Website login, CONNECT, MCP/TCP, and confinement demonstrations remain pending.
 
 ## Development
 
