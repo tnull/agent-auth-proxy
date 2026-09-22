@@ -206,6 +206,11 @@ impl Context {
         })
     }
 
+    /// Recheck an owned exchange without preparing or authorizing a dispatch.
+    pub fn validate(&mut self, exchange: &Exchange, now: Instant) -> Result<()> {
+        self.check(exchange, now)
+    }
+
     pub fn start_response(
         &mut self,
         exchange: &Exchange,

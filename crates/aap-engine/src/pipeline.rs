@@ -117,6 +117,7 @@ impl Session {
             dispatched: false,
             observed: Mutex::new(std::array::from_fn(|_| StreamState::default())),
             website: None,
+            remote: None,
             response_recorded: false,
             flow,
         };
@@ -136,6 +137,14 @@ impl Session {
         };
         match prepared {
             Ok(response) => {
+                let delivery_check = guard
+                    .remote
+                    .as_ref()
+                    .map(|exchange| exchange.completion_check());
+                let completion_check = guard
+                    .remote
+                    .as_ref()
+                    .map(|exchange| exchange.completion_check());
                 let cancellation = {
                     let operation = operation.clone();
                     let session = self.clone();
@@ -143,6 +152,15 @@ impl Session {
                         .website
                         .as_ref()
                         .map(|exchange| exchange.binding.clone());
+                    let remote = guard
+                        .remote
+                        .as_ref()
+                        .map(|exchange| exchange.binding.clone());
+                    let remote_deadline = remote
+                        .as_ref()
+                        .map(|binding| binding.deadline())
+                        .transpose()?
+                        .unwrap_or(deadline);
                     Box::pin(async move {
                         let website = async {
                             if let Some(binding) = binding {
@@ -151,7 +169,14 @@ impl Session {
                                 std::future::pending::<()>().await;
                             }
                         };
-                        tokio::select! { _ = operation.cancelled.cancelled() => {}, _ = session.core.cancelled.cancelled() => {}, _ = tokio::time::sleep_until(deadline) => {}, _ = website => {} }
+                        let remote = async {
+                            if let Some(binding) = remote {
+                                binding.cancelled.cancelled().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        };
+                        tokio::select! { _ = operation.cancelled.cancelled() => {}, _ = session.core.cancelled.cancelled() => {}, _ = tokio::time::sleep_until(deadline.min(remote_deadline)) => {}, _ = website => {}, _ = remote => {} }
                     }) as BoxFuture<'static, ()>
                 };
                 Ok(response.map(|body| {
@@ -163,6 +188,8 @@ impl Session {
                         unobserved: BytesMut::new(),
                         eof: false,
                         observation_ended: false,
+                        delivery_check,
+                        completion_check,
                     }
                     .boxed_unsync()
                 }))
@@ -194,6 +221,11 @@ impl Session {
         }
         let route = profile.authorize(&request.method, &target, body.len())?;
         route.authorize_headers(&request.headers)?;
+        if let Authentication::Mcp { .. } = &profile.auth {
+            return self
+                .dispatch_remote(guard, deadline, profile, &target, body)
+                .await;
+        }
         if let Authentication::Form { .. } = &profile.auth {
             return self
                 .dispatch_website(guard, deadline, profile, &target, body)
@@ -281,65 +313,8 @@ impl Session {
             item.approval,
             true,
         ) {
-            let provider = configuration
-                .approval
-                .as_ref()
-                .ok_or(ErrorCode::InteractionUnavailable)?;
-            let _pending = self
-                .core
-                .pending
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| ErrorCode::LimitExceeded)?;
-            let retained = request.body_base64.len()
-                + request.target.len()
-                + 1024
-                + request
-                    .headers
-                    .iter()
-                    .map(|(name, value)| name.len() + value.len())
-                    .sum::<usize>();
-            self.core
-                .pending_bytes
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                    used.checked_add(retained)
-                        .filter(|next| *next <= 4 * 1024 * 1024)
-                })
-                .map_err(|_| ErrorCode::LimitExceeded)?;
-            let _retention = PendingRetention {
-                used: &self.core.pending_bytes,
-                retained,
-            };
-            let expires = deadline.min(Instant::now() + Duration::from_secs(300));
-            let approval = Arc::new(ApprovalRequest {
-                daemon_epoch: self.core.host.epoch.clone(),
-                session_id: self.id().into(),
-                approval_id: aap_types::ids::random_id(32).map_err(|_| ErrorCode::InternalError)?,
-                configuration_revision: configuration.catalog.configuration_revision,
-                item_id: item_id.clone(),
-                operation: request.clone(),
-                credential_lease: metadata.lease.clone(),
-                expires_at: expires.into_std(),
-            });
-            guard
-                .operation
-                .transition(OperationState::PendingApproval, None)?;
-            guard.record_both(
-                Direction::Outbound,
-                Data::PolicyDecision {
-                    decision: Decision::Pending,
-                    reason: None,
-                },
-            )?;
-            let approved = tokio::time::timeout_at(
-                expires,
-                provider.approve(approval, guard.operation.cancelled.clone()),
-            )
-            .await
-            .map_err(|_| ErrorCode::InteractionUnavailable)??;
-            if !approved {
-                return Err(ErrorCode::PolicyDenied.into());
-            }
+            self.approve_operation(guard, item_id, &metadata.lease, None, deadline)
+                .await?;
         }
         self.check()?;
         let body = STANDARD
@@ -455,16 +430,6 @@ impl Session {
     }
 }
 
-struct PendingRetention<'a> {
-    used: &'a AtomicUsize,
-    retained: usize,
-}
-impl Drop for PendingRetention<'_> {
-    fn drop(&mut self) {
-        self.used.fetch_sub(self.retained, Ordering::AcqRel);
-    }
-}
-
 pub(super) struct Guard {
     pub flow: Flow,
     session: Session,
@@ -474,9 +439,21 @@ pub(super) struct Guard {
     pub dispatched: bool,
     pub observed: Mutex<[StreamState; 4]>,
     pub website: Option<super::website::Exchange>,
+    pub remote: Option<super::remote_mcp::Exchange>,
     pub response_recorded: bool,
 }
 impl Guard {
+    pub fn complete_local(&mut self, status: u16) -> Result<()> {
+        self.session.check()?;
+        if self.operation.cancelled.is_cancelled() {
+            return Err(ErrorCode::RequestConflict.into());
+        }
+        self.finish_observation(true, None)?;
+        self.operation
+            .transition(OperationState::Completed, Some(status))?;
+        self.finished = true;
+        Ok(())
+    }
     fn complete(&mut self) -> Result<()> {
         {
             let mut state = self
@@ -492,6 +469,9 @@ impl Guard {
             }
             if let Some(exchange) = &self.website {
                 exchange.binding.check()?;
+            }
+            if let Some(exchange) = &self.remote {
+                exchange.check()?;
             }
             let mut context_state = self
                 .website
@@ -511,6 +491,9 @@ impl Guard {
                 return Err(ErrorCode::OutcomeUnknown.into());
             }
             self.finish_observation(true, None)?;
+            if let Some(exchange) = &mut self.remote {
+                exchange.commit()?;
+            }
             if let (Some(context), Some(exchange)) = (&mut context_state, &self.website) {
                 context.status = exchange.final_state;
             }
@@ -525,6 +508,9 @@ impl Guard {
         }
         if let Some(exchange) = &self.website {
             exchange.binding.invalidate(AuthState::Revoked);
+        }
+        if let Some(exchange) = &mut self.remote {
+            exchange.abandon();
         }
         let state = if self.dispatched {
             OperationState::OutcomeUnknown
@@ -568,6 +554,8 @@ struct TrackedBody {
     unobserved: BytesMut,
     eof: bool,
     observation_ended: bool,
+    delivery_check: Option<BoxFuture<'static, Result<()>>>,
+    completion_check: Option<BoxFuture<'static, Result<()>>>,
 }
 impl TrackedBody {
     fn observe(&mut self, bytes: &[u8], end: bool) -> Result<Option<Bytes>> {
@@ -599,6 +587,16 @@ impl BodyTrait for TrackedBody {
                 this.guard.fail(ErrorCode::OutcomeUnknown);
                 return Poll::Ready(Some(Err(ErrorCode::OutcomeUnknown.into())));
             }
+            if let Some(check) = &mut this.delivery_check {
+                match check.as_mut().poll(context) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Err(error)) => {
+                        this.guard.fail(error.code);
+                        return Poll::Ready(Some(Err(error)));
+                    }
+                    Poll::Ready(Ok(())) => this.delivery_check = None,
+                }
+            }
             if this.eof {
                 if !this.guard.response_recorded && !this.observation_ended {
                     this.observation_ended = true;
@@ -609,6 +607,16 @@ impl BodyTrait for TrackedBody {
                             this.guard.fail(error.code);
                             return Poll::Ready(Some(Err(error)));
                         }
+                    }
+                }
+                if let Some(check) = &mut this.completion_check {
+                    match check.as_mut().poll(context) {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(Err(error)) => {
+                            this.guard.fail(error.code);
+                            return Poll::Ready(Some(Err(error)));
+                        }
+                        Poll::Ready(Ok(())) => this.completion_check = None,
                     }
                 }
                 if let Err(error) = this.guard.complete() {

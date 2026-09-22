@@ -17,9 +17,11 @@ use tokio::{
     time::Instant,
 };
 
+mod approval;
 mod observation;
 mod pipeline;
 mod proxy;
+mod remote_mcp;
 mod vault;
 mod website;
 
@@ -51,6 +53,8 @@ pub struct ApprovalRequest {
     pub item_id: String,
     pub operation: Arc<ExecuteRequest>,
     pub credential_lease: aap_secrets::Lease,
+    /// Independent safe context generation, never an upstream session token.
+    pub context_id: Option<String>,
     pub expires_at: std::time::Instant,
 }
 pub trait ApprovalProvider: Send + Sync {
@@ -74,6 +78,8 @@ struct Host {
     operation_bytes: AtomicUsize,
     contexts: Arc<Semaphore>,
     login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
+    remote_profiles: HashMap<String, Arc<aap_mcp_upstream::Profile>>,
+    remote_buffers: Arc<Semaphore>,
 }
 struct SessionCore {
     host: Arc<Host>,
@@ -86,6 +92,9 @@ struct SessionCore {
     pending: Arc<Semaphore>,
     pending_bytes: AtomicUsize,
     vault: Mutex<vault::Vault>,
+    remote: Mutex<remote_mcp::Vault>,
+    remote_buffers: Arc<Semaphore>,
+    control: Arc<Semaphore>,
 }
 #[derive(Default)]
 struct Operations {
@@ -163,6 +172,15 @@ impl Broker {
                 .collect::<Vec<_>>(),
             configuration.catalog.configuration_revision,
         )?;
+        let mut remote_profiles = HashMap::new();
+        for profile in &configuration.profiles {
+            if let aap_policy::Authentication::Mcp { tools, .. } = &profile.auth {
+                remote_profiles.insert(
+                    profile.id.clone(),
+                    Arc::new(aap_mcp_upstream::Profile::new(tools.clone())?),
+                );
+            }
+        }
         Ok(Self {
             host: Arc::new(Host {
                 configuration,
@@ -171,6 +189,8 @@ impl Broker {
                 operation_bytes: AtomicUsize::new(0),
                 contexts: Arc::new(Semaphore::new(64)),
                 login_attempts: Mutex::new(HashMap::new()),
+                remote_profiles,
+                remote_buffers: Arc::new(Semaphore::new(64 * 1024 * 1024)),
             }),
         })
     }
@@ -222,6 +242,9 @@ impl Broker {
             pending: Arc::new(Semaphore::new(16)),
             pending_bytes: AtomicUsize::new(0),
             vault: Mutex::new(vault::Vault::default()),
+            remote: Mutex::new(remote_mcp::Vault::default()),
+            remote_buffers: Arc::new(Semaphore::new(8 * 1024 * 1024)),
+            control: Arc::new(Semaphore::new(2)),
         });
         sessions.insert(id, Arc::downgrade(&core));
         Ok(Session { core })
@@ -261,6 +284,7 @@ impl Broker {
         {
             context.invalidate(AuthState::Revoked);
         }
+        session.invalidate_remote(None)?;
         Ok(())
     }
 }

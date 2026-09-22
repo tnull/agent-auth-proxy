@@ -26,6 +26,45 @@ are capped at five minutes and operations at ten minutes/session expiry.
 These are admission ceilings, not production capacity claims. Further quota,
 expiry, restart/reload, and multi-thread race coverage remains part of W1/W4.
 
+## Remote MCP integration
+
+The initial `Authentication::Mcp` path handles pinned initialization, initialized
+acknowledgments, reviewed tool listing/calls, and bounded JSON/SSE responses over
+the admitted HTTPS transport. Contexts are owned by one local session/resource
+and its enrolled credential lease. Private upstream headers never become caller
+headers; message validation runs before secret resolution. The local MCP tool
+list is not dynamically expanded by remote tools.
+
+Initialization is staged until the response is consumed successfully. Dropping
+it invalidates that handshake; tooling cannot skip the initialized notification.
+Custody is rechecked after response inspection, before body delivery, and at
+completion. Rotation, observed access loss, failed secret preparation, rejected
+trailers, and revoked/expired bindings prevent reuse. An uncertain call is never
+replayed by a duplicate local operation ID, status query, or fresh handshake.
+
+Provider, website, and remote operations share the bounded approval helper.
+MCP approval includes an independent safe `context_id`, not the native session
+header. Pending approval holds no newly resolved password. Context lifetime is
+at most ten minutes, with a thirty-second handshake; both are capped by current
+session/custody lifetime. Remote generations retain up to sixteen tombstones per
+session and share the broker's sixty-four-context ceiling with website contexts.
+
+Work uses the session's eight active slots; control messages have two additional
+slots shared across remote contexts. Protocol reservations are bounded to 8 MiB
+per session and 64 MiB per broker: twice the input length plus 64 KiB while
+preparing, and six times the admitted response ceiling during response work.
+Control replies have a narrower 64 KiB ceiling. Reservations cover simultaneous
+encoded/transformed buffers, not a measurement of total process heap usage;
+byte ceilings may admit fewer simultaneous operations than the slot ceilings.
+These counters need further adversarial allocation/concurrency evidence before
+the complete remote MCP gate can pass.
+
+This is not the complete remote gateway. Endpoint DELETE and server-initiated
+ping dispatch currently fail explicitly. Complete cancellation/control-child
+semantics, protocol-specific observation metadata, multi-account and overload
+coverage, and actual daemon/CONNECT remote-MCP fixtures remain pending. The
+component and first HTTPS tests must not be described as completing W7.
+
 ## Password-manager sessions
 
 An optional `SessionOptions.items` list further narrows a resource grant to

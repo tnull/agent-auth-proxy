@@ -1,7 +1,8 @@
 # Remote MCP mediation
 
-Status: W7 target contract; enrollment validation, standalone message handling,
-and private context state are implemented, but engine/daemon integration is pending. See
+Status: W7 target contract; enrollment, private protocol state, and initial
+HTTPS engine paths are implemented. Complete control/cleanup integration and
+actual daemon acceptance fixtures remain pending. See
 [implementation evidence](../docs/proof-of-concept.md#remote-mcp-message-boundary).
 This complements the
 [local MCP tools](mcp.md); it does not replace their seven-tool interface or

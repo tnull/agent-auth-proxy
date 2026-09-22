@@ -4,7 +4,8 @@ This describes implemented behavior, not the full planned product. The current
 daemon brokers explicitly submitted API-key and profiled website requests, with
 password-manager discovery/fake credentials/status/logout and a local stdio
 MCP bridge and optional [session-bound CONNECT inspection](connect.md).
-It is not yet a remote MCP mediator or sandbox launcher.
+Its remote MCP engine integration is partial and has no actual-daemon acceptance
+fixture yet; it is not a complete remote MCP gateway or sandbox launcher.
 
 ## Configuration and startup
 

@@ -84,6 +84,7 @@ version = "0.1.0"
 dependencies = [
  "aap-auth",
  "aap-config",
+ "aap-mcp-upstream",
  "aap-observe",
  "aap-policy",
  "aap-providers",

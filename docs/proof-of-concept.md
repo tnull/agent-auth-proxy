@@ -640,3 +640,45 @@ and 161 unit tests, twelve process tests, and one compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0; stable formatting, warning-free Clippy, and warning-free
 documentation pass. The engine still rejects MCP dispatch as unsupported:
 these configuration checks do not yet establish real remote MCP mediation.
+
+## First remote MCP engine exchanges
+
+The engine now connects the enrolled protocol component to its local-session
+identity, item grant, real SQLCipher store, admitted HTTPS connector, asynchronous
+approval, response-completion guard, and sanitized HTTP observation. A context
+pins the credential lease and owns an independent safe generation ID. Approval
+includes that generation, and provider/website/MCP paths share one bounded
+approval helper without holding newly resolved secrets during the wait.
+
+Seven engine integration tests use real controlled HTTPS origins. They cover
+JSON and chunked SSE initialization/list/call exchanges, empty initialized
+acknowledgments, two isolated local sessions, exact tool/header validation before
+resolution, key/session echo suppression in agent and observation views, dropped
+handshakes, approval/cancel/revoke/rotation, and uncertain-call deduplication.
+Credentials are revalidated before delivery and at final completion; tests rotate
+them both before the first frame and after delivery has started. Fresh explicit
+initialization works without reviving old native context authority.
+
+The first three tests failed at the missing-dispatch boundary before production
+code was added. Targeted failed-secret-resolution and rejected-trailer cases
+then exposed retained-context bugs in the draft integration; both were observed
+failing at their intended assertions before correction and now pass. The other
+approval and late-custody cases provide additional conformance evidence.
+
+Remote requests share work slots and have separate bounded control slots and
+protocol reservations. Current reservation accounting and the narrower control
+response bound are documented in [the engine contract](../crates/aap-engine/README.md#remote-mcp-integration);
+this is not yet a proof of all planned allocation/concurrency invariants.
+
+The full W7 gate remains incomplete. Server-initiated ping and DELETE cleanup
+still fail explicitly, complete cancellation-child behavior and protocol-level
+observation metadata remain to implement, and the actual daemon/CONNECT fixture,
+multiple-account isolation, and adversarial capacity tests remain outstanding.
+The previously listed TCP, confinement, reuse, maintenance, and native-store
+deliverables also remain required; this slice does not narrow the proof's scope.
+
+All 168 unit tests, twelve daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both;
+formatting, warning-free Clippy, and warning-free public documentation pass
+on 1.95.0. These checks cover the current implementation, not the remaining
+remote-control or complete W7 acceptance requirements.

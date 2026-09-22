@@ -26,11 +26,13 @@ request tools, with real-process form/JSON website tests. Optional
 requests through the session socket. [HTTP observation](docs/observation.md)
 now correlates sanitized agent/upstream views, ordered content, and logical
 request endings. Collectors have operator-enrolled private session/content
-subscriptions with isolated cursors and acknowledgments. Remote MCP, TCP,
+subscriptions with isolated cursors and acknowledgments. Complete remote MCP, TCP,
 complete connection coverage, and confinement demonstrations remain pending.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
-upstream contexts independently; its daemon integration is not yet implemented.
+upstream contexts. The engine's first real HTTPS initialization/list/call paths
+are verified; remote control/cleanup and actual daemon MCP fixtures remain
+incomplete. See the [engine contract](crates/aap-engine/README.md#remote-mcp-integration).
 
 ## Development
 

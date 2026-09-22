@@ -11,9 +11,10 @@ sessions/resources/accounts and enforce admitted destinations, current
 credential/policy versions, approval, quotas, observation, and cancellation.
 Validated messages do not authorize a connection or credential use.
 
-The engine integration and actual daemon remote-MCP fixture remain pending.
-Do not advertise remote MCP support from
-these pure protocol tests alone. This crate starts no runtime or connector and
+The engine now has initial real HTTPS initialization/list/call tests; complete
+control/cleanup integration and actual daemon remote-MCP fixtures remain pending.
+Do not advertise a complete remote gateway from these component tests alone.
+This crate starts no runtime or connector and
 does not retrieve credentials or launch background work. SDK types remain
 private to its implementation.
 
