@@ -71,7 +71,7 @@ recipient cannot be eliminated by response filtering.
 | Store selection | Injected `SecretStore` interface; direct Keychain custody on macOS, encrypted SQLite elsewhere |
 | Existing macOS items | Enroll authorized Keychain items in place; no password mirror or promise of access to every app's items |
 | Rust packaging | Reusable libraries with a thin daemon; agent client cannot depend on credential-custody code |
-| Dependencies | Minimal, scoped to the crates that need them; no dedicated secret-wrapper package; UniFFI optional |
+| Dependencies | Minimal, scoped to the crates that need them; no dedicated secret-wrapper package; direct Rust Keychain bindings |
 | Form login | Explicit resource profiles; exact parsed-field substitution with random, context-bound fake passwords |
 | Cookies | Private cookie jars partitioned by tenant, agent session, resource profile, and account |
 | Inspection | TLS termination for enrolled clients; separate verified TLS to each approved upstream |

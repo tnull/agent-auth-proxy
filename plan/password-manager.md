@@ -13,7 +13,7 @@ agent. The daemon accesses only items permitted by the deployment's store
 identity and the requesting session's grants. A backend-neutral `SecretStore`
 interface separates custody from authentication behavior. The macOS daemon
 stores credentials directly in Keychain; other platforms default to encrypted
-SQLite. Optional native-host integration may use UniFFI. See
+SQLite. The macOS adapter uses direct Rust `security-framework` bindings. See
 [secret stores](secret-stores.md) for the interface and backend requirements.
 
 Trusted macOS setup may enroll an existing accessible Keychain item without

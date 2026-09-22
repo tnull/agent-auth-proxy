@@ -44,7 +44,6 @@ agent-auth-proxy/
     aap-secrets/              # Secret-store interface and guarded values
     aap-store-sqlite/          # Non-macOS default encrypted SQLite backend
     aap-store-keychain/        # macOS default native credential backend
-    aap-ffi/                  # Optional native-host bindings
     aap-auth/                 # Password manager, substitution, cookie sessions
     aap-observe/              # Redacted events and bounded delivery
     aap-transport/            # Network/TLS primitives and upstream execution
@@ -60,8 +59,8 @@ agent-auth-proxy/
 
 Each crate has its own `Cargo.toml`, README, `src/`, and relevant integration
 tests. The daemon uses Keychain directly on macOS and encrypted SQLite on other
-platforms. The native backend and potential UniFFI bridge are separate packages,
-introduced with their integration milestones; UniFFI is optional. Existing
+platforms. The native backend is a separate package introduced with its
+integration milestone and uses direct Rust `security-framework` bindings. Existing
 authorized Keychain items can be enrolled without copying their passwords.
 Other store adapters can implement the same interface without changing the
 engine. See [secret stores](secret-stores.md).
@@ -83,7 +82,6 @@ Rust signatures. Review concrete signatures during each implementation step.
 | `aap-secrets` | `SecretStore` trait, private store references, version/availability contract, guarded secret values | No agent-facing secret retrieval API; backend dependencies remain outside this crate |
 | `aap-store-sqlite` | SQLCipher-backed store, transactional item versions, schema/key lifecycle | Non-macOS daemon default; native database dependency is confined here |
 | `aap-store-keychain` | Native credential storage, authorized existing-item enrollment, access/lock semantics | macOS daemon default; no dependency from portable libraries |
-| `aap-ffi` | Optional store-interface bindings and adapter for a native host implementation | UniFFI/Swift integration does not enter the core Rust API or default daemon |
 | `aap-auth` | `PasswordManager`, context-bound placeholders, login profiles, cookie jars, credential transforms, response secret capture | Depends on store abstractions; does not select arbitrary destinations or open connections |
 | `aap-observe` | `ObservationEvent`, sink/subscription interfaces, redacted chunks, sequence/gap tracking, bounded export | Receives safe views; never serializes raw authenticated requests or store responses |
 | `aap-transport` | DNS resolution results, admitted endpoint dialing, HTTP streaming, TLS client/server primitives, bounded TCP relay | No credential lookup or implicit redirect/retry; caller supplies admitted routing and request data |
@@ -120,7 +118,6 @@ external Rust dependencies and development-only edges are omitted.
 | `aap-client` | `aap-types` |
 | `aap-store-sqlite` | `aap-types`, `aap-secrets` |
 | `aap-store-keychain` | `aap-types`, `aap-secrets` |
-| `aap-ffi` | `aap-types`, `aap-secrets` |
 | `aap-daemon` | `aap-types`, `aap-engine`, `aap-policy`, `aap-secrets`, `aap-observe`, `aap-transport`, `aap-http`, `aap-mcp`, `aap-providers`, `aap-client`; platform-selected `aap-store-sqlite` or `aap-store-keychain` |
 
 `AgentService` is the narrow agent-facing interface. The engine implements it
@@ -223,7 +220,7 @@ Proposed implementation stack:
 | Non-secret serialization/config | Serde and JSON at adapter/daemon boundaries | Reuse the wire-format parser for initial configuration; no separate config parser |
 | Secret handling | Small private-field owned-byte wrapper using `std` | Intentional access, no automatic formatting/serialization, minimal copies; no dedicated wrapper dependency |
 | Non-macOS secret store | `rusqlite` with SQLCipher support | Existing database encryption, isolated to `aap-store-sqlite` |
-| macOS secret store | Native Keychain bindings or a host-supplied interface; optional UniFFI | Direct credential storage and permitted reuse of existing items; no SQLite mirror |
+| macOS secret store | `security-framework` bindings or a host-supplied Rust store | Direct credential storage and permitted reuse of existing items; no SQLite mirror |
 | Diagnostics | Typed library errors; `tracing` events with explicitly safe fields | Host chooses subscribers and process-level reporting |
 
 These choices are supported by the projects' documentation:

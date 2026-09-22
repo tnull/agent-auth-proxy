@@ -76,7 +76,6 @@ claim that the proposed proxy already works with Goose.
 | [MCP runner](../../goose/crates/goose-mcp/src/mcp_server_runner.rs) | Existing use of the Rust MCP SDK supports isolating that SDK in this project's MCP adapter |
 | [Application configuration](../../goose/crates/goose/src/config/base.rs) | Native/file secret handling is application-owned; use a public store contract, not a dependency on Goose's internal configuration module |
 | [Goose manifest](../../goose/crates/goose/Cargo.toml) | Existing SQLite linkage makes SQLCipher/native dependency compatibility a real embedding check |
-| [Goose SDK manifest](../../goose/crates/goose-sdk/Cargo.toml) | Optional UniFFI integration is relevant to native hosts; it need not become a core Rust or daemon dependency |
 
 Prefer external-daemon integration first: credential-free provider endpoints
 and MCP over an admitted per-session socket/bridge. Later, a trusted host can
@@ -92,6 +91,6 @@ versions remain an implementation-time resolution and build check.
 
 The [store design](secret-stores.md) cites SQLCipher and rusqlite for encrypted
 SQLite, Apple's Keychain services/item/access-control documentation for native
-custody and reuse limitations, and UniFFI's interface documentation for optional
-native callbacks. Backend selection is a project decision: Keychain holds the
+custody and reuse limitations, and `security-framework` documentation for direct
+Rust access. Backend selection is a project decision: Keychain holds the
 credential items on macOS, while encrypted SQLite is the non-macOS default.

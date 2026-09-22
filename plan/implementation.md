@@ -19,8 +19,8 @@ The first Linux release uses encrypted SQLite behind the `SecretStore` interface
 Implement database encryption with SQLCipher rather than custom cryptography.
 The macOS release uses Keychain directly for all managed persistent credentials,
 including authorized existing items where possible; it must not ship with SQLite
-as a substitute for incomplete Keychain support. Native host implementations,
-potentially through UniFFI, use that same interface. Never ship the fixture
+as a substitute for incomplete Keychain support. Rust host implementations
+use that same interface. Never ship the fixture
 store as an operational fallback.
 The backend and unlock-key requirements are detailed in
 [secret stores](secret-stores.md).
@@ -47,7 +47,7 @@ one enormous commit per milestone.
 | W6 | Complete the first supported website login | TLS interception in `aap-transport`/`aap-http`, form and cookie logic in `aap-auth`, engine integration | MCP discovery through fake form submission to authenticated page retrieval; private cookies, CSRF, safe redirects, logout, rotation, and uncertainty handling all verified |
 | W7 | Complete observation delivery and broaden transport support | `aap-observe`, `aap-http`, `aap-mcp`, `aap-transport` | Resume/gaps and required-mode failure behavior; declared HTTP/2, remote MCP, TCP, or WebSocket profiles pass their separate acceptance suites |
 | W8 | Prove reuse and prepare an operational release | External consumer fixtures, embedding examples, daemon packaging/docs | Another Rust project uses the libraries without daemon startup or neighboring repositories; shared behavioral suite passes for daemon and embedded use |
-| W9 | Deliver macOS credential storage and existing-item reuse | `aap-store-keychain` and, when needed, optional `aap-ffi` | Keychain is the macOS default; new and enrolled existing items work without SQLite copies; access denial, external changes, and native callbacks are verified |
+| W9 | Deliver macOS credential storage and existing-item reuse | `aap-store-keychain` using `security-framework` | Keychain is the macOS default; new and enrolled existing items work without SQLite copies; access denial, external changes, and lock behavior are verified |
 
 W1 and the store contract in W2 can be developed independently after W0. W3
 needs both; W4 makes that path usable as a daemon. W5 and W6 form the first
@@ -62,7 +62,7 @@ W4 and its authenticated website checks require W6. It need not wait for W8.
 
 Keep one repository and one root lockfile. Add the library/package boundaries
 listed in the workspace design as they receive their initial contracts; omit
-native/FFI adapters from workspace members until their milestone. A scaffold
+the native store adapter from workspace members until its milestone. A scaffold
 must not claim unimplemented listeners or security guarantees are functional.
 
 Use a root virtual manifest with explicit members and shared metadata, lints,
@@ -237,10 +237,9 @@ Passwords/Safari/iCloud items. Native enrollment prompts are distinct from futur
 per-operation approval/push features. Deny interaction-requiring reads when no
 trusted interaction path is available. See [the store contract](secret-stores.md).
 
-Use direct Rust bindings for the daemon unless a native-host bridge is needed;
-UniFFI is optional, not a prerequisite for using Keychain. If selected, add
-callback lifetime/threading/cancellation tests and keep it out of portable core
-and agent-client dependency closures. A macOS release also needs a separately
+Use direct Rust `security-framework` bindings for the daemon. Keep Apple
+dependencies inside the platform adapter, out of the portable core and
+agent-client dependency closures. A macOS release also needs a separately
 verified sandbox/egress boundary; passing store tests alone is insufficient.
 
 ## Verification and CI
@@ -277,7 +276,7 @@ supported feature combinations and the declared MSRV; do not rely solely on
 `--all-features` to establish that minimal library builds work. Add a dependency
 advisory/license check before release and review TLS/store dependencies.
 Inspect dependency trees for minimal library/client builds and the default daemon.
-SQLCipher, Apple frameworks, and UniFFI must appear only where selected; do not
+SQLCipher and Apple frameworks must appear only where selected; do not
 add convenience packages without a concrete requirement.
 
 For local Rust builds and tests, use a fresh directory under `/tmp` named for
@@ -305,8 +304,7 @@ change, because no Cargo workspace exists yet.
 
 - Select the SQLCipher build/linking approach and trusted database-key
   provisioning mechanism; validate native dependency compatibility for embedders.
-- Validate direct Rust Keychain bindings for the macOS daemon and the need for
-  optional native-host UniFFI integration. Record accessible existing-item
+- Validate direct `security-framework` bindings for the macOS daemon. Record accessible existing-item
   classes, signing/access requirements, and enrollment UX before macOS release.
 - Select initial provider routes and website fixtures, finite size/time limits,
   and the first production site's profile before claiming supported access.

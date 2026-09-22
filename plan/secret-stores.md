@@ -2,8 +2,8 @@
 
 Use a small Rust interface for credential custody. macOS stores credentials
 directly in Keychain; encrypted SQLite is the default on other platforms.
-Native embedding applications may provide their own implementation, potentially
-through UniFFI. Reuse existing Keychain items where authorized access is possible.
+Trusted Rust hosts may provide their own implementation. Reuse existing Keychain
+items where authorized access is possible.
 The engine, MCP tools, and authentication logic must not depend on which backend
 is selected.
 
@@ -14,14 +14,13 @@ is selected.
 | `aap-secrets` | Backend-neutral store interface, item/version types, safe errors, privately held secret bytes |
 | `aap-store-sqlite` | Non-macOS default encrypted SQLite store, transactions, schema migration, keying and lock lifecycle |
 | `aap-store-keychain` | macOS default: native credential storage and authorized reuse of existing items |
-| `aap-ffi` | Optional UniFFI adapter for native hosts, including a foreign implementation of the store interface |
 
 Backends are injected as a store implementation at trusted startup; this does
 not require a dynamic plugin loader, an RPC service per backend, or a registry
 framework. Keep backend SDKs/native links in their adapter crates. `aap-client`
 must not depend on any of them. Daemon builds select the platform's default
 backend: Keychain on macOS, SQLite elsewhere. Neither backend is mandatory for
-an embedding host that supplies its own store. UniFFI remains optional.
+an embedding host that supplies its own store.
 
 The `SecretStore` interface is asynchronous and object-safe. Use standard-library
 futures/boxed futures where dynamic dispatch is needed; do not add a macro or
@@ -166,10 +165,13 @@ Persist only private references and approved non-secret catalog data outside
 Keychain; no durable password mirror or cache. Missing/invalid references
 require re-enrollment, not automatic selection of a same-named replacement.
 
-Use a narrow maintained Rust binding for native calls if a standalone Rust host
-needs this backend. A native application may instead implement the same store
-contract using its own Keychain code and the optional foreign-interface adapter.
-The two integration paths need not both be dependencies of any one executable.
+Use `security-framework` directly from Rust for password storage, retrieval,
+updates, deletion, and scoped item searches. If a required native operation lacks
+a high-level wrapper, isolate a narrow `security-framework-sys` binding inside
+the Keychain adapter. No Swift layer or generated cross-language interface is
+needed. Embedding Rust hosts can use this backend or supply their own store.
+[Password APIs](https://docs.rs/security-framework/latest/security_framework/passwords/index.html),
+[item searches](https://docs.rs/security-framework/latest/security_framework/item/struct.ItemSearchOptions.html)
 
 Keychain prompts and user-presence checks belong to the trusted application's
 interaction policy. Initial enrollment may perform native permission setup;
@@ -179,31 +181,10 @@ itself, fall back to SQLite, or copy denied material into a cache. Test native
 access/lock behavior on macOS with isolated test items/keychains, never a
 developer's personal items.
 
-## Optional UniFFI integration
-
-Keep all UniFFI attributes, binding generation, and foreign-facing DTOs in
-`aap-ffi`; the ordinary Rust interface stays independent. Native Swift code can
-provide a store callback implementation, which the adapter wraps as a Rust
-`SecretStore`. UniFFI supports foreign implementations of exported interfaces;
-the selected async/callback signatures still need a small interoperability test.
-[UniFFI interfaces](https://mozilla.github.io/uniffi-rs/latest/types/interfaces.html#foreign-implementations)
-
-Begin with the store interface, not bindings for the whole HTTP engine. Specify
-callback threading, cancellation, object lifetime, and how UI interaction is
-scheduled by the host. Prove that lock/revocation and callback failure cannot
-return a stale successful resolution. Never hold engine locks while calling
-foreign code or blocking on UI work.
-
-Foreign code providing a store is trusted and may see real secrets. Keep that
-interface distinct from the credential-free agent client. Secret bytes crossing
-FFI can have native-language copies/lifetimes; do not promise whole-process
-zeroization. No binding generator, Swift toolchain, or Apple framework belongs
-in the default Linux daemon build.
-
 ## Acceptance criteria
 
 - The same read/use conformance suite runs against SQLite, the fixture backend,
-  and later Keychain/foreign implementations without changing engine logic.
+  and later Keychain implementations without changing engine logic.
 - The default database rejects no/wrong keys, remains encrypted through writes,
   WAL/checkpoints and backups, and never creates plaintext fallback storage.
 - Item version changes, deletion, store lock, and failure invalidate access and
@@ -216,7 +197,7 @@ in the default Linux daemon build.
 - macOS release checks validate the real signed host's item-access behavior;
   inaccessible Passwords/iCloud or other-app items are reported as unsupported,
   not treated as an excuse to bypass platform controls.
-- Client/minimal library builds pull neither SQLite nor Keychain/UniFFI unless
+- Client/minimal library builds pull neither SQLite nor Keychain bindings unless
   their selected functionality requires them.
-- Native callbacks cannot widen grants, choose arbitrary proxy destinations,
+- Store implementations cannot widen grants, choose arbitrary proxy destinations,
   silently unlock through an agent request, or bypass the proxy's state checks.
