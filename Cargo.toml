@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/aap-types",
+    "crates/aap-policy",
+    "crates/aap-secrets",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[workspace.dependencies]
+aap-types = { path = "crates/aap-types" }
+aap-policy = { path = "crates/aap-policy" }
+aap-secrets = { path = "crates/aap-secrets" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"

@@ -1,0 +1,48 @@
+# Proof-of-concept delivery and evidence
+
+This tracks implementation of [the plan](../plan/implementation.md), not a
+replacement specification. Unchecked items are not implemented or verified.
+The end-to-end proof must use real transports and the encrypted store, not
+only mocked component tests. Tests use synthetic credentials and local origins.
+
+## Completion checklist
+
+- [ ] W0: Git-managed workspace, documented crates, toolchain, CI and dependency checks.
+- [ ] W1: Strict contracts, session binding, policy, expiry/revocation and operation deduplication.
+- [ ] W2: Pluggable store and actual SQLCipher encryption, versions, lock, wrong-key rejection, backup/rekey and restart checks.
+- [ ] W3: Two provider profiles, verified TLS, final key injection, bounded response streaming and safe observation.
+- [ ] W4: Standalone daemon, distinct session/control sockets, client, quotas, cancellation, configuration validation/reload and shutdown.
+- [ ] W5: MCP discovery, fake credentials, status/logout and constrained HTTP tools.
+- [ ] W6: Intercepted TLS, form/JSON substitution, private cookies, CSRF, response sanitization and a complete authenticated website flow.
+- [ ] W7: Observation export with gaps/resume/required mode; MCP mediation and constrained TCP relay.
+- [ ] W8: Trusted embedding and external client examples, operator instructions, real confinement checks and complete local verification.
+- [ ] W9: Direct macOS Keychain adapter and existing-item enrollment; identify macOS-only validation.
+
+HTTP/2, WebSocket, cross-origin federation, additional site adapters, OAuth
+interactive enrollment and human approval are declared individually rather than
+silently passed through. Unsupported traffic must fail explicitly. The first
+supported form login, provider path, MCP and TCP coverage are required; replacing
+them with a generic request example does not complete this proof.
+
+## Implementation choices
+
+- Start with the installed Rust 1.95 toolchain; declare Rust 1.88 compatibility
+  and verify it before completion.
+- Keep dependencies scoped; no `secrecy`, ORM, or general plugin system.
+- Use `security-framework` directly for Keychain. Narrow low-level bindings may
+  supplement it; a Swift bridge is not necessary.
+- Do not modify Goose or Loupe. Their integration seams remain research inputs.
+- Native macOS runtime checks may remain explicitly unverified on this Linux host.
+- Leave product/license/production enrollment questions for the final handoff.
+
+## Evidence log
+
+W0 foundation: the three initial contract crates build and their empty test
+suites run under Rust 1.95.0. Crates are added as their implementation begins.
+CI describes format/check/test/lint/doc and MSRV gates; remote CI has not run.
+No behavioral or security claim is verified by the scaffold.
+
+This host's Rustup installation is read-only. Local commands use
+`RUSTUP_TOOLCHAIN=stable`, whose installed compiler is exactly the pinned
+1.95.0 version. This is a local invocation override, not a changed toolchain
+requirement or an unverified claim that another compiler passed.
