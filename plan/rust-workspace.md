@@ -223,11 +223,12 @@ local paths; add version requirements when preparing libraries for publishing.
 [Cargo workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html),
 [dependency resolver](https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions)
 
-The starter workspace declares Rust 1.88 compatibility and pins Rust 1.95.0 for
-build/format/lint tooling. Treat the MSRV as a requirement to verify, not a claim
-that the lower toolchain has already passed. This target also precedes the
-inspected Goose minimum (`rust-version = "1.94.1"`). Review dependencies against
-both policies; do not silently require a newer compiler from downstream users.
+The workspace declares Rust 1.88 compatibility and pins Rust 1.95.0 for
+build/format/lint tooling. The initial five crates have passed local checks and
+tests on both toolchains; see the delivery tracker for exact coverage. Reverify
+the MSRV when adding crates or dependencies. This target also precedes the
+inspected Goose minimum (`rust-version = "1.94.1"`); do not silently require a
+newer compiler from downstream users.
 
 Proposed implementation stack:
 

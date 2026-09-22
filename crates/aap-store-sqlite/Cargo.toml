@@ -1,0 +1,19 @@
+[package]
+name = "aap-store-sqlite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+aap-types.workspace = true
+aap-secrets.workspace = true
+aap-config.workspace = true
+rusqlite.workspace = true
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
+
+[lints]
+workspace = true

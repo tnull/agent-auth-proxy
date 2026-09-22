@@ -107,3 +107,33 @@ Cargo build output remains under the task's `/tmp/cargo-target-*` directory.
 The user namespace maps only UID 1000, so the real ACL fixture names that
 mapped UID rather than attempting to create an invalid unmapped-user ACL.
 Other-platform ACL handling remains explicitly unsupported, not assumed safe.
+
+Actual encrypted backend: `aap-store-sqlite` now uses bundled SQLCipher with
+system OpenSSL and a caller-supplied runtime handle. Ten backend tests cover
+keyed creation/read/write, coherent versioned transactions and forced rollback,
+encrypted database/WAL/backup files, wrong/missing/invalid keys, plaintext
+refusal, lock/unlock/deletion/restart, separate-key backup, and database-key
+rotation with an encrypted recovery copy. File replacement or unsafe access
+closes the live handle. Unsupported schemas are rejected without altering the
+database. Native work has bounded admission and no plaintext/test-store fallback.
+
+The initial backend, backup, rotation, schema-refusal, and changed-file tests
+were observed failing before their implementations/corrections and now pass.
+The forced-write-failure test was also demonstrated to fail with the write
+transaction removed and pass after restoring it. Native wrong-key tests emit
+fixed SQLCipher decryption diagnostics; no native diagnostic enters store errors.
+
+Current verification: all 34 unit tests and the secret-formatting compile-fail
+doctest pass on Rust 1.95.0 and Rust 1.88.0. Workspace compilation passes on
+both; formatting, Clippy, and public documentation builds pass on 1.95.0.
+Rust 1.88.0 was installed into an isolated task directory under `/tmp`, leaving
+the host's read-only Rustup installation unchanged. Normal dependency inspection
+confirms SQLCipher is confined to its backend and no ORM, dedicated secret
+wrapper, or default Wasm/cache adapter was added.
+
+W2 remains incomplete pending process-interruption/recovery fault coverage,
+the schema-upgrade maintenance path, shared backend conformance, and remaining
+native-work race/limit checks. The engine, real transport, daemon, password
+substitution/cookie handling, MCP, observability, and confinement demonstrations
+are still to be implemented; these component tests do not establish the full
+proof of concept.

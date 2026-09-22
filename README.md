@@ -25,5 +25,12 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
+The SQLite backend builds bundled SQLCipher and needs a C compiler, `pkg-config`,
+and OpenSSL development libraries. Filesystem fixtures normally use root-owned
+sticky `/tmp`; if that parent is unsafe on the test host, set `AAP_TEST_ROOT`
+to a trusted existing parent for fresh automatically removed test directories.
+Keep `CARGO_TARGET_DIR` under `/tmp` regardless. Do not relax filesystem checks
+or change global permissions to make tests pass.
+
 Packages are unpublished while their interfaces stabilize. A distribution
 license has not yet been selected; no publishing or release is implied.

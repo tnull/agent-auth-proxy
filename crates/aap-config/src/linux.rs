@@ -20,6 +20,11 @@ const FILE_FLAGS: OFlags = OFlags::NOFOLLOW
 const MAX_BUFFERED_BYTES: usize = 64 * 1024 * 1024;
 
 impl PrivateDir {
+    /// Make directory-entry changes durable after a native backend creates files.
+    pub fn sync(&self) -> Result<()> {
+        validate_private(&self.directory, true)?;
+        self.directory.sync_all().map_err(|_| Error::Unavailable)
+    }
     /// Open an absolute directory without traversing symlinks or untrusted writers.
     /// Only the final component may be created. Existing permissions are not repaired.
     pub fn open(path: &Path, create: bool) -> Result<Self> {

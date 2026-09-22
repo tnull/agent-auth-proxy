@@ -40,6 +40,9 @@ impl PrivateDir {
 
 #[cfg(not(target_os = "linux"))]
 impl PrivateDir {
+    pub fn sync(&self) -> Result<()> {
+        Err(Error::Unsupported)
+    }
     pub fn open(_path: &std::path::Path, _create: bool) -> Result<Self> {
         Err(Error::Unsupported)
     }
