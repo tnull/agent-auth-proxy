@@ -527,3 +527,47 @@ evidence, and macOS custody remain outstanding. No dependency was added.
 All 133 unit tests, twelve process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
 warning-free Clippy, and warning-free public documentation pass on 1.95.0.
+
+## Remote MCP message boundary
+
+`aap-mcp-upstream` now provides a trusted, connector-free protocol component for
+the [pinned remote profile](../plan/remote-mcp.md). It compiles finite reviewed
+tool/argument contracts, bounds and validates JSON-RPC requests, reconstructs
+handshakes without agent capabilities, and requires caller-assigned upstream
+request IDs. Request objects are bound to the exact compiled profile instance.
+
+Complete response messages are checked against the expected request ID and
+profile. Only enrolled tool definitions and approved text/structured results
+survive; arbitrary upstream instructions, error details, metadata, binary
+content, resource links, and later SDK extensions cannot pass through. Known
+secrets are suppressed structurally after JSON decoding, including escaped
+strings, object keys, and numeric values. Redaction collisions, damaged protocol
+fields, output amplification, and numeric error-code echoes fail safely. Server
+ping is returned as private control work for engine admission, never dispatched
+by this component.
+
+The incremental SSE framer handles UTF-8 chunk splits, an initial BOM, line
+ending variants, multiline data, priming events, and ignored unknown fields.
+Line/event/count/total budgets and poisoned failure state prevent unbounded
+retention or resume after errors. Its output remains private raw event data;
+the response validator and eventual engine completion checks are still required
+before any agent or observation delivery. IDs/retry hints are discarded.
+
+Ten initial tests failed against the fail-closed interface stubs before
+implementation. Follow-up tests demonstrated malformed post-redaction replies,
+numeric error-code leakage, and incorrect SSE field handling before their
+corrections. Additional coverage checks profile-instance isolation, output
+amplification, and aggregate SSE input limits. Thirteen component tests now
+pass. No new external dependency was added; the crate reuses existing JSON,
+authentication, and pinned SDK dependencies. Client/local-MCP custody dependency
+boundaries remain unchanged.
+
+This does not complete W7. Private upstream session lifecycle/header handling,
+HTTP status/notification integration, operation/approval/cancellation ownership,
+aggregate engine quotas, observation, and the actual daemon remote-MCP fixture
+remain pending. TCP, full connection coverage, confinement, reusable examples,
+store-maintenance evidence, and native macOS custody also remain outstanding.
+
+All 146 unit tests, twelve process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
+warning-free Clippy, and warning-free public documentation pass on 1.95.0.

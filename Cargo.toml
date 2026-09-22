@@ -15,6 +15,7 @@ members = [
     "crates/aap-http",
     "crates/aap-client",
     "crates/aap-mcp",
+    "crates/aap-mcp-upstream",
     "crates/aap-daemon",
 ]
 
@@ -39,6 +40,7 @@ aap-engine = { path = "crates/aap-engine" }
 aap-http = { path = "crates/aap-http" }
 aap-client = { path = "crates/aap-client" }
 aap-mcp = { path = "crates/aap-mcp" }
+aap-mcp-upstream = { path = "crates/aap-mcp-upstream" }
 rmcp = { version = "=3.4.0", default-features = false }
 base64 = "0.22"
 getrandom = "0.3"

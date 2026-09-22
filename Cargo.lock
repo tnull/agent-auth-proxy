@@ -139,6 +139,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aap-mcp-upstream"
+version = "0.1.0"
+dependencies = [
+ "aap-auth",
+ "aap-types",
+ "rmcp",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aap-observe"
 version = "0.1.0"
 dependencies = [

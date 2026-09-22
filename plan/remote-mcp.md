@@ -1,6 +1,8 @@
 # Remote MCP mediation
 
-Status: proposed W7 contract, not implemented behavior. This complements the
+Status: W7 target contract; only the standalone message-validation component
+is implemented so far. See [implementation evidence](../docs/proof-of-concept.md#remote-mcp-message-boundary).
+This complements the
 [local MCP tools](mcp.md); it does not replace their seven-tool interface or
 introduce an authentication protocol. Names remain provisional.
 
