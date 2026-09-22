@@ -1,0 +1,27 @@
+[package]
+name = "aap-http"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+aap-types.workspace = true
+aap-transport.workspace = true
+bytes.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+tokio = { workspace = true, features = ["rt", "net", "time", "macros"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+aap-client.workspace = true
+aap-config.workspace = true
+rustix.workspace = true
+tokio = { workspace = true, features = ["io-util", "sync"] }
+
+[lints]
+workspace = true

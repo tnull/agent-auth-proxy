@@ -5,6 +5,7 @@ pub mod json;
 pub mod profile;
 pub mod protocol;
 pub mod service;
+pub mod wire;
 
 pub use protocol::*;
 pub use service::{AgentService, Body, Response};

@@ -4,6 +4,8 @@ use std::fs::File;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::SocketBinding;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -119,6 +121,71 @@ mod tests {
             br#"{"revision":2}"#
         );
         assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn session_sockets_are_private_exclusive_and_removed_by_identity() {
+        use std::{os::unix::net::UnixStream, sync::Arc};
+        let root = Fixture::new();
+        let directory = Arc::new(PrivateDir::open(&root.0, false).unwrap());
+        let binding = directory
+            .bind_socket("session.sock")
+            .expect("private socket creation failed");
+        let listener = binding.listener().unwrap();
+        assert_eq!(
+            fs::metadata(root.0.join("session.sock"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o600
+        );
+        let _client = UnixStream::connect(root.0.join("session.sock")).unwrap();
+        let _server = listener.accept().unwrap();
+        binding.revalidate().unwrap();
+        assert!(directory.bind_socket("session.sock").is_err());
+        assert!(directory.bind_socket("../escape.sock").is_err());
+        drop(binding);
+        assert!(!root.0.join("session.sock").exists());
+        let binding = directory.bind_socket("session.sock").unwrap();
+        fs::rename(root.0.join("session.sock"), root.0.join("retired.sock")).unwrap();
+        directory
+            .write_atomic("session.sock", b"replacement", 1024)
+            .unwrap();
+        assert!(binding.revalidate().is_err());
+        drop(binding);
+        assert_eq!(
+            directory.read("session.sock", 1024).unwrap(),
+            b"replacement"
+        );
+        assert!(directory.bind_socket("session.sock").is_err());
+        assert_eq!(
+            directory.read("session.sock", 1024).unwrap(),
+            b"replacement"
+        );
+    }
+
+    #[test]
+    fn socket_permission_changes_fail_without_repair() {
+        use std::sync::Arc;
+        let root = Fixture::new();
+        let directory = Arc::new(PrivateDir::open(&root.0, false).unwrap());
+        let binding = directory.bind_socket("session.sock").unwrap();
+        fs::set_permissions(
+            root.0.join("session.sock"),
+            fs::Permissions::from_mode(0o666),
+        )
+        .unwrap();
+        assert!(binding.revalidate().is_err());
+        assert!(binding.listener().is_err());
+        assert_eq!(
+            fs::metadata(root.0.join("session.sock"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o666
+        );
     }
 
     #[test]

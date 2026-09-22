@@ -1,0 +1,44 @@
+# Local session HTTP binding, version 1
+
+This implemented adapter uses one host-provided Unix socket per session. The
+host makes only that attachment visible inside the sandbox. `Host: aap.local`
+is a fixed routing check, not authentication. A session ID in a header or body
+never selects another session. Operator methods are not present on this router.
+
+Every local call is HTTP/1.1 POST with `Content-Type: application/json`, no
+query, and an origin-form target. DTOs are in `aap-types::protocol`; strict JSON
+decoding rejects unknown and duplicate fields. Request framing is bounded to
+2 MiB, 64 headers/64 KiB, and a ten-second header/body read deadline. Each
+listener has at most 32 active connections; connections are not kept alive.
+
+| Path | JSON request | Result |
+| --- | --- | --- |
+| `/aap/v1/request/execute` | `ExecuteRequest` | Sanitized upstream status/body stream |
+| `/aap/v1/request/status` | `{"request_id":"…"}` | `OperationStatus` |
+| `/aap/v1/request/cancel` | `{"request_id":"…"}` | `OperationStatus` |
+| `/aap/v1/vault/search_items` | `SearchItems` | `SearchResult` |
+| `/aap/v1/vault/get_login` | `GetLogin` | `Login` |
+| `/aap/v1/vault/auth_status` | `AuthContext` | `AuthStatus` |
+| `/aap/v1/vault/logout` | `AuthContext` | `Logout` |
+| `/aap/v1/connect/admit` | `{"authority":"…"}` | JSON null after admission |
+
+Exposure of a method does not imply the engine supports its profile yet. At
+this checkpoint the broker implements API-key execution/status/cancellation;
+password-manager and interception operations still return unsupported errors.
+CONNECT tunneling is not enabled by merely calling the admission endpoint.
+
+Proxy errors carry `x-aap-error: 1` and the fixed `Error` JSON DTO. Upstream
+HTTP error statuses remain ordinary upstream responses, not proxy errors.
+For repeated identical execution IDs, the engine returns existing status with
+`x-aap-operation-state: existing` (202 while pending, 200 when terminal), not
+replayed content or another dispatch. Modified reuse conflicts.
+
+The client performs no automatic retry or redirect. Its connection deadline is
+ten seconds; a call/stream is bounded to 630 seconds and 32 MiB, with 65-second
+stream inactivity. A broken connection after sending is conservatively uncertain.
+Use explicit status/cancel calls; disconnect alone is not proof of remote rollback.
+Server shutdown cancels listener work and drops in-flight execution futures.
+
+The daemon/operator composition, provider-compatible mounts, and intercepted
+forward-proxy binding are separate work. None is available through a hidden
+path or a permissive fallback on the session socket.

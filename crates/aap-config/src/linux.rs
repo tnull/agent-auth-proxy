@@ -19,7 +19,116 @@ const FILE_FLAGS: OFlags = OFlags::NOFOLLOW
     .union(OFlags::NONBLOCK);
 const MAX_BUFFERED_BYTES: usize = 64 * 1024 * 1024;
 
+pub struct SocketBinding {
+    directory: std::sync::Arc<PrivateDir>,
+    name: String,
+    entry: File,
+    listener: std::os::unix::net::UnixListener,
+}
+impl SocketBinding {
+    pub fn listener(&self) -> Result<std::os::unix::net::UnixListener> {
+        self.revalidate()?;
+        self.listener.try_clone().map_err(|_| Error::Unavailable)
+    }
+    pub fn revalidate(&self) -> Result<()> {
+        validate_private(&self.directory.directory, true)?;
+        let stat = fs::fstat(&self.entry).map_err(map_errno)?;
+        let named = fs::statat(
+            &self.directory.directory,
+            self.name.as_str(),
+            AtFlags::SYMLINK_NOFOLLOW,
+        )
+        .map_err(map_errno)?;
+        if (stat.st_dev, stat.st_ino) != (named.st_dev, named.st_ino)
+            || FileType::from_raw_mode(stat.st_mode) != FileType::Socket
+            || stat.st_uid != rustix::process::geteuid().as_raw()
+            || stat.st_mode & 0o7777 != 0o600
+            || stat.st_nlink != 1
+        {
+            return Err(Error::UnsafePermissions);
+        }
+        // O_PATH pins the filesystem socket inode but cannot use fgetxattr.
+        // This kernel-owned descriptor path resolves that same pinned inode.
+        let anchored = format!("/proc/self/fd/{}", self.entry.as_raw_fd());
+        for attribute in ["system.posix_acl_access", "system.posix_acl_default"] {
+            let mut buffer = [0u8; 1];
+            match fs::getxattr(anchored.as_str(), attribute, &mut buffer[..]) {
+                Err(Errno::NODATA | Errno::NOTSUP) => {}
+                Ok(_) | Err(Errno::RANGE) => return Err(Error::UnsafePermissions),
+                Err(_) => return Err(Error::Unavailable),
+            }
+        }
+        Ok(())
+    }
+}
+impl Drop for SocketBinding {
+    fn drop(&mut self) {
+        if validate_private(&self.directory.directory, true).is_err() {
+            return;
+        }
+        let (Ok(entry), Ok(named)) = (
+            fs::fstat(&self.entry),
+            fs::statat(
+                &self.directory.directory,
+                self.name.as_str(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            ),
+        ) else {
+            return;
+        };
+        if (entry.st_dev, entry.st_ino) == (named.st_dev, named.st_ino)
+            && FileType::from_raw_mode(named.st_mode) == FileType::Socket
+            && named.st_uid == rustix::process::geteuid().as_raw()
+            && named.st_nlink == 1
+        {
+            let _ = fs::unlinkat(
+                &self.directory.directory,
+                self.name.as_str(),
+                AtFlags::empty(),
+            );
+        }
+    }
+}
+
 impl PrivateDir {
+    /// Exclusively bind inside this private directory. The binding owns cleanup;
+    /// retain it until all listener clones have stopped accepting connections.
+    pub fn bind_socket(self: &std::sync::Arc<Self>, name: &str) -> Result<SocketBinding> {
+        valid_name(name)?;
+        validate_private(&self.directory, true)?;
+        let path = format!("/proc/self/fd/{}/{}", self.directory.as_raw_fd(), name);
+        let listener =
+            std::os::unix::net::UnixListener::bind(path).map_err(|_| Error::Unavailable)?;
+        let entry = File::from(
+            fs::openat(
+                &self.directory,
+                name,
+                OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(map_errno)?,
+        );
+        let binding = SocketBinding {
+            directory: self.clone(),
+            name: name.into(),
+            entry,
+            listener,
+        };
+        let stat = fs::fstat(&binding.entry).map_err(map_errno)?;
+        if FileType::from_raw_mode(stat.st_mode) != FileType::Socket
+            || stat.st_uid != rustix::process::geteuid().as_raw()
+            || stat.st_nlink != 1
+        {
+            return Err(Error::UnsafePermissions);
+        }
+        // chmodat's no-follow mode is unsupported by this Rustix backend.
+        // Follow only the kernel descriptor link to our already pinned socket
+        // inode, never a replaceable path supplied by the caller.
+        let anchored = format!("/proc/self/fd/{}", binding.entry.as_raw_fd());
+        fs::chmod(anchored.as_str(), Mode::from_raw_mode(0o600)).map_err(map_errno)?;
+        binding.revalidate()?;
+        Ok(binding)
+    }
     /// Make directory-entry changes durable after a native backend creates files.
     pub fn sync(&self) -> Result<()> {
         validate_private(&self.directory, true)?;

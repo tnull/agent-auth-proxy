@@ -18,6 +18,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aap-client"
+version = "0.1.0"
+dependencies = [
+ "aap-types",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "aap-config"
 version = "0.1.0"
 dependencies = [
@@ -45,6 +61,25 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "aap-http"
+version = "0.1.0"
+dependencies = [
+ "aap-client",
+ "aap-config",
+ "aap-transport",
+ "aap-types",
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rustix",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -996,6 +1031,7 @@ version = "1.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
 dependencies = [
+ "bytes",
  "libc",
  "mio",
  "pin-project-lite",

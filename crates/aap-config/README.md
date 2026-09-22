@@ -15,6 +15,13 @@ Other platforms require their actual ACL semantics to be implemented and tested
 before they are supported. Owner-only access does not isolate another process
 with the same UID; sandbox filesystem confinement remains necessary.
 
+Linux session/control sockets can be exclusively bound through a retained
+`SocketBinding`. New socket inodes are set to 0600 inside the already-private
+directory, pinned with a descriptor, and checked for type/owner/link/ACL changes.
+Listener clones require revalidation. Cleanup unlinks only the same owned inode;
+it neither replaces an existing entry nor deletes a later replacement. Stop
+listener tasks before releasing the binding. No process-global umask is changed.
+
 The only added OS dependency is the safe
 [rustix descriptor API](https://docs.rs/rustix/latest/rustix/fs/fn.openat.html),
 including [descriptor-based attributes](https://docs.rs/rustix/latest/rustix/fs/fn.fgetxattr.html).

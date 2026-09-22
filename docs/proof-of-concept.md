@@ -187,3 +187,24 @@ configuration lifecycle, exhaustive quota/race checks, complete observation
 views/export, and the website/MCP/TCP/confinement paths are still pending.
 Known-value suppression remains defense in depth against ordinary echoes; it
 does not defeat covert encoding by an intentionally malicious upstream.
+
+## Private local session transport
+
+`aap-config` now exclusively binds owner-only Linux sockets, pins their inodes,
+revalidates permissions/type/owner/ACL, and cleans up only its own unchanged
+entry. Two tests cover real socket connection, exclusion of existing entries,
+permission loss, and preservation of a replacement during cleanup. The initial
+tests failed against the socket stubs. The native Rustix backend does not support
+no-follow chmodat; permission changes instead use the pinned kernel descriptor
+path, not a mutable caller pathname or a process-global umask.
+
+`aap-http` and `aap-client` implement the [versioned local binding](local-http.md).
+Three real-socket tests cover independent bound sessions, typed error/status
+round trips, malformed/duplicate JSON, forged authority fields, rejection of
+operator/absolute targets, and shutdown while an execution is pending. The
+initial client/server test failed before implementation. Client normal dependency
+inspection shows no engine, secret-store, authentication, SQLCipher, TLS, or
+test-support packages. This is adapter evidence, not yet a standalone daemon
+or sandbox demonstration. The workspace has 66 unit tests plus the compile-fail
+doctest; build, tests, formatting, and Clippy pass on Rust 1.95.0. The same
+66 unit tests and doctest also pass on Rust 1.88.0.
