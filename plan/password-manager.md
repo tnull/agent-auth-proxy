@@ -13,11 +13,10 @@ agent. The daemon accesses only items permitted by the deployment's store
 identity and the requesting session's grants. Store products, APIs, encryption
 mechanisms, and cache implementation are intentionally not selected here.
 
-Passwords, API keys, refresh tokens, and signing-key references may be managed
-through this boundary. Some stores can perform signing without returning a key;
-others supply secret material to the trusted daemon. Both satisfy isolation
-from the agent. Interception-CA keys and administrative credentials live in a
-separate namespace that is never exposed through agent MCP item discovery.
+Passwords, API keys, and access/refresh tokens are managed through this boundary.
+The store supplies secret material only to the trusted daemon. Interception-CA
+keys and administrative credentials live in a separate namespace that is never
+exposed through agent MCP item discovery.
 
 ## Item model
 
@@ -112,8 +111,8 @@ Result, with illustrative placeholders:
   "item_id":"item-work",
   "auth_context":"BASE64URL_32_BYTES",
   "credentials":{
-    "username":{"value":"aap_lu1_BASE64URL_32_BYTES","kind":"placeholder"},
-    "password":{"value":"aap_lp1_BASE64URL_32_BYTES","kind":"placeholder"}
+    "username":{"value":"aap_un1_BASE64URL_32_BYTES","kind":"placeholder"},
+    "password":{"value":"aap_pw1_BASE64URL_32_BYTES","kind":"placeholder"}
   },
   "submission":{
     "uri":"https://accounts.example/session",
@@ -121,30 +120,33 @@ Result, with illustrative placeholders:
     "content_type":"application/x-www-form-urlencoded",
     "fields":{"username":"username","password":"password"}
   },
-  "expires_in":120,
-  "uses":1
+  "expires_in":600,
+  "reusable":true
 }
 ```
 
 The password is always a placeholder. The username may have `kind:"value"`
 only if the item expressly allows the real username to be disclosed. Otherwise
-it is an independently random `aap_lu1_` placeholder, resolved in the same atomic
-login attempt as the fake password. This supports login forms that require the
+it is an independently random `aap_un1_` placeholder, resolved in the same
+login operation as the fake password. This supports login forms that require the
 agent to type both fields without exposing a private username.
 
-The tool performs the logical `legacy.prepare` operation from the common
-protocol and reserves an authorized login attempt. It never returns a real
+The tool performs the logical `auth.prepare` operation from the common
+protocol and creates a permitted credential binding. It never returns a real
 password, token, cookie, OTP, recovery code, or raw secret-store response.
 Duplicate `request_id` with the same input returns the same still-valid issuance
-or its terminal state; it cannot mint another attempt. Changed input conflicts.
-A consumed/expired issuance requires a new explicitly authorized request ID.
+or its terminal state; it cannot mint another binding. Changed input conflicts.
+Expired or revoked issuance requires a new explicitly authorized request ID.
 The subsequent login submission is a separate operation with its own request
 ID, or a proxy-generated ID for ordinary forwarded HTTP.
 
 Issuance verifies store availability and pins the credential version. A change
-of version before use invalidates the issuance. `expires_in` is at most 120
-seconds and is also capped by session/grant expiry. The proxy's clock determines
-expiry; the response does not let the agent extend it.
+of version before use invalidates the issuance. `expires_in` is the remaining
+positive integer lifetime in seconds, selected by operator policy and capped
+by context/session/grant expiry; 600 above is illustrative. The proxy's clock
+determines expiry. `reusable:true` permits multiple independently authorized
+submissions within that binding, never use in another context or direct use at
+the site. Retrieving or using the placeholder does not extend its lifetime.
 
 ### `vault.auth_status` and `vault.logout`
 
@@ -180,8 +182,8 @@ pinned version and store access immediately before credential dispatch. Remote
 cookies may remain valid at the site after a password change; local invalidation
 must not claim remote revocation.
 
-Store secret material may exist transiently inside the trusted daemon or
-approved signer. Never include it in debug formatting, crash reports, child
+Store secret material may exist transiently inside the trusted daemon.
+Never include it in debug formatting, crash reports, child
 environments, observation payloads, or agent error messages. Retention and
 memory-hardening details belong to the later implementation/security design.
 
@@ -199,6 +201,7 @@ or password rotation later requires a separate, explicit authorization design.
 - Multiple matching accounts require explicit item selection; the daemon never
   chooses a more privileged account based on model-supplied text.
 - Username virtualization, repeated tool calls, expiry, concurrent submission,
-  item rotation, store lock, and store outage preserve one-use isolation.
+  item rotation, store lock, and store outage preserve context isolation and
+  invalidate bindings when required. Permitted reuse does not bypass login limits.
 - Vault discovery, errors, observations, and MCP tool results contain only
   authorized metadata and placeholders, not native store identifiers or secrets.

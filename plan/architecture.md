@@ -8,8 +8,8 @@ MCP servers, prompts, tool results, repository configuration, and HTTP headers.
 
 The **daemon** authenticates sandbox sessions, authorizes requests, controls
 upstream connections, holds credentials, and produces observation events. Its
-credential boundary includes signing keys, the interception CA private key,
-passwords, token refresh state, cookie jars, and security state.
+credential boundary includes the interception CA private key, passwords,
+provider API keys, token refresh state, cookie jars, and security state.
 Persistent credentials are backed by a secret store. The daemon exposes a
 scoped password-manager interface through MCP; the store itself, its native
 record identifiers, and its unlock credentials are not exposed to the agent.
@@ -20,9 +20,9 @@ agent cannot install resource profiles, enroll trust roots, change grants,
 select arbitrary secret-store entries, or turn off observation requirements.
 
 An **upstream resource** is a model provider, MCP server, website, API, or
-approved TCP service. A **resource verifier** is the resource or its trusted
-gateway that implements strict challenge-response. Observation consumers and
-future human approvers have separate authenticated interfaces and privileges.
+approved TCP service. It uses its existing authentication protocol. Observation
+consumers and future human approvers have separate authenticated interfaces and
+privileges.
 
 ```mermaid
 flowchart LR
@@ -33,7 +33,7 @@ flowchart LR
     end
     subgraph T[Trusted host boundary]
         P[Proxy daemon: session and policy enforcement]
-        K[Credentials, signing, private cookie state]
+        K[Credentials and private cookie state]
         S[Backing secret store]
         O[Operator and future approval channel]
         P <--> K
@@ -42,7 +42,6 @@ flowchart LR
     end
     C -->|Session-bound ingress| P
     P -->|Verified TLS and final authentication| R[Providers and resources]
-    P -->|Challenge and signed request| V[Cooperating resource verifier]
     P -->|Redacted ordered streams| E[Observation consumers]
 ```
 
@@ -50,7 +49,7 @@ The sandbox enforcement layer MUST make the daemon the only available egress
 path. This includes DNS and IPv6, local host services, alternate proxy sockets,
 inherited file descriptors, container networking, and tool subprocesses.
 QUIC/UDP is denied in the baseline; HTTP clients must use supported transports.
-The daemon's own DNS, metadata, authorization, redirect, and key-discovery
+The daemon's own DNS, metadata, authorization, redirect, and secret-store
 traffic is subject to policy too.
 
 ## Architectural responsibilities
@@ -62,23 +61,22 @@ These are responsibility boundaries, not a proposed process/crate layout.
 | Session admission | Bind a host-established tenant/agent/job identity to ingress; enforce lifetime and revocation |
 | Routing and policy | Resolve permitted resource/account profiles; authorize action, destination, and limits |
 | Transport mediation | Parse supported protocols, terminate enrolled TLS, relay approved streams, reject ambiguity |
-| Authentication custody | Inject existing credentials, execute new challenge-response, own private session state |
+| Authentication custody | Substitute fake credentials, inject API credentials, own private cookie/token state |
 | Password manager | Discover authorized site/items, return fake login values, resolve versioned store secrets |
-| Resource verification | On the resource side, verify signed requests and atomically consume challenges |
 | Observation | Export redacted content and decision events with provenance and explicit gaps |
 | Control and approval | Provision, revoke, and approve using a channel inaccessible to agent code |
 
-The daemon is a privileged mediator, not a general signing service or an open
-forward proxy. A request for a signature or a raw secret is never an agent API.
-The daemon sends the authenticated request itself and returns only its safe
-response view.
+The daemon admits only requests authorized for the agent's session. Its agent
+API exposes credential placeholders and authenticated operations; real secrets
+remain private. The daemon sends the authenticated request itself and returns
+only its safe response view.
 
 ## Transport coverage
 
 | Traffic | Mediation and inspection | Authentication boundary |
 | --- | --- | --- |
 | Model HTTP API | Fixed approved routes, parsed request policy, streamed response/SSE observation | Provider key/token inserted by daemon |
-| HTTPS forward proxy / CONNECT | TLS terminates at daemon after destination admission; HTTP parsed inside tunnel | Per-resource new or compatibility profile |
+| HTTPS forward proxy / CONNECT | TLS terminates at daemon after destination admission; HTTP parsed inside tunnel | Per-resource form/cookie or API authentication profile |
 | Explicit MCP internet-access tool | Typed destination/method/body input maps to the same HTTP policy path | Tool never accepts or returns real credentials |
 | Remote MCP over HTTP | Separate local MCP server and upstream MCP client roles; JSON-RPC and HTTP correlated | Daemon owns upstream MCP authentication |
 | Local MCP over stdio | Mediated launcher/stdio channel and constrained child egress | No secret-bearing environment passed to untrusted child |
@@ -126,8 +124,9 @@ an operator explicitly enrolled the exact service. An approved domain does not
 grant access to every service sharing its IP address. Restrict schemes and ports;
 reject URL userinfo, fragments, ambiguous authority, and unsupported encodings.
 
-TLS early data is disabled on authenticated request paths. Replayable early
-data cannot carry an operation whose authentication promises one-use admission.
+TLS early data is disabled on authenticated request paths to avoid introducing
+transport-level replay of authenticated operations. This does not provide
+application idempotency or change an upstream credential's properties.
 [RFC 8470](https://www.rfc-editor.org/rfc/rfc8470.html)
 
 ## Request and response path
@@ -139,12 +138,13 @@ data cannot carry an operation whose authentication promises one-use admission.
    including provider-side tools, tool arguments, method, target, and quotas.
 3. Freeze the permitted request. Emit its redacted agent-side representation.
    Obtain approval if required. Select and validate the upstream connection.
-4. Perform authentication preparation: acquire a resource challenge, substitute
-   the declared password field, or select a token/cookie jar. Recheck session,
+4. Perform authentication preparation: validate credential placeholders and
+   select the permitted store item, token, or cookie jar. Recheck session,
    grant, credential version, destination, and approval immediately before send.
-5. Inject authentication at the final outbound boundary. Compute any digest and
-   signature after all authorized transformations. No later component may mutate
-   protected request values. Emit a redacted upstream view and mutation metadata.
+5. Substitute the declared credential fields or inject authentication headers
+   at the final outbound boundary. Recompute framing after transformations;
+   preserve the approved destination and action. Emit a redacted upstream view
+   and mutation metadata.
 6. On every response, including errors, redirects, informational messages, and
    trailers, capture private authentication state before exposing any content.
    Apply the route's response profile, emit safe observation, and deliver the
@@ -170,7 +170,7 @@ cross-session credential use and confused-deputy requests even if the attacker
 already controls one admitted agent.
 
 The trusted computing base includes sandbox enforcement, the daemon, control
-plane, credential custody, resource verifier, and any component allowed to see
+plane, credential custody, and any component allowed to see
 raw authenticated traffic. A compromised host or daemon can exercise stored
 credentials. A malicious resource that legitimately receives a password can
 leak it in arbitrary encodings; no universal filter can prevent that. Restrict
@@ -182,4 +182,4 @@ Revocation stops new dispatches, closes applicable long-lived streams, cancels
 pending operations, and discards session-bound credentials/handles. It cannot
 undo a request already admitted at the remote service. Restart invalidates local
 sessions and transient fake passwords by default; persistent security state must
-not resurrect consumed challenges, revoked authority, or another session's jar.
+not resurrect expired placeholders, revoked authority, or another session's jar.

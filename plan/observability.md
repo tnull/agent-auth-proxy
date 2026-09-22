@@ -59,7 +59,7 @@ secret fingerprints, grant internals, or private usernames in the envelope.
 | `request.start`, `response.start` | Safe method/target/status and redacted structured headers |
 | `content.chunk` | Ordered sanitized bytes, offset in this sanitized view, encoding, media type |
 | `message` | Optional parsed MCP/JSON-RPC, SSE, or WebSocket message with stream correlation |
-| `auth.transition` | Profile, challenge/login/context state, safe item alias, outcome |
+| `auth.transition` | Profile, login/context state, safe item alias, outcome |
 | `policy.decision` | Allow/deny/pending, safe reason, decision version |
 | `content.end` | Complete/incomplete, sanitized byte count, terminal cause |
 | `observation.gap` | Missing sequence interval or unavailable epoch/cursor, loss scope, reason |
@@ -70,7 +70,7 @@ same content, not additional network requests. Streams end explicitly on
 cancellation, denial, parse failure, limits, or disconnect. Never report a
 partial body as complete.
 
-Also record daemon challenge, authentication, metadata, and refresh subrequests,
+Also record daemon authentication, metadata, and refresh subrequests,
 linked to their parent where applicable. Export approved raw TCP bytes with
 direction and order without pretending to parse unknown protocols. Identify
 unmediated remote tool activity as outside coverage; do not invent downstream
@@ -79,8 +79,8 @@ traces that the daemon did not observe.
 ## Redaction and streaming
 
 Redact authentication headers, private Cookie/Set-Cookie values, passwords,
-refresh/access tokens, secret-store responses, outbound signatures, one-use
-credential placeholders, and private CSRF fields. URLs, nested bodies, errors,
+refresh/access tokens, secret-store responses, credential placeholders, and
+private CSRF fields. URLs, nested bodies, errors,
 MCP results, redirects, trailers, and compressed responses are in scope too.
 Never export an unkeyed password/token hash as a correlation identifier; use
 independently assigned identifiers.

@@ -31,7 +31,7 @@ connection.
 | `request.execute` | `request_id`, `resource`, optional `auth_context`, method, target, headers, body | Safe response/stream, pending handle, or error |
 | `request.status` | `request_id` | State and retained safe result metadata; never resubmits |
 | `request.cancel` | `request_id` | Cancellation state; remote execution may already have occurred |
-| `legacy.prepare` | `resource`, permitted account alias, login target, method, format, password field | Fake password, context handle, expiry, and exact permitted submission scope |
+| `auth.prepare` | `request_id`, permitted `item_id`, site URI | Fake credentials, context handle, expiry, and profile-selected submission scope |
 | `auth.status` | `auth_context` | Unauthenticated, authenticating, authenticated, expired, or revoked |
 | `auth.logout` | `auth_context` | Local authority invalidated; remote logout outcome separately reported |
 
@@ -76,15 +76,15 @@ After dispatch: cancellation records uncertainty; it does not undo execution
 ```
 
 Validation freezes the exact action, selected account, relevant headers, body,
-and policy version. Mutation requires a new operation. Challenge acquisition
-and credential preparation happen for this frozen operation. No protected
+and policy version. Mutation requires a new operation. Credential preparation
+happens for this frozen operation. No protected
 application bytes are sent while approval is pending.
 
 `outcome_unknown` means bytes may have reached the resource but the daemon
 cannot determine whether the action ran. Do not automatically repeat a
 potentially state-changing operation. A retry needs a documented resource
-idempotency contract or an explicit new authorized operation. Request IDs and
-signature nonces alone do not provide exactly-once execution.
+idempotency contract or an explicit new authorized operation. Local request IDs
+alone do not provide exactly-once execution at the resource.
 
 ## Human interaction extension
 
@@ -100,9 +100,11 @@ and expires. A generic "approve this agent" signal cannot silently authorize
 an altered transfer, tool call, or login. Approval and 2FA are distinct: extra
 authentication of the person does not itself express consent to an action.
 
-After approval, recheck current grants and obtain a fresh resource challenge.
-Do not keep a 60-second nonce alive during a long human interaction. Denial,
-expiry, cancellation, and session revocation invalidate the pending operation.
+After approval, recheck grants, store access, credential version, placeholder
+expiry, and cookie/CSRF state. If preparation has expired, reject the pending
+operation and require fresh preparation; never transfer approval to changed
+work. Denial, expiry, cancellation, and session revocation invalidate the
+pending operation.
 If no approved human channel exists, return `interaction_unavailable`; never
 let the agent supply its own approval or upstream OTP.
 
@@ -125,14 +127,15 @@ from resource HTTP statuses and MCP application errors.
 | `auth_failed` | Authentication failed; no automatic guessing or downgrade |
 | `vault_locked` | Required backing store is locked; trusted unlock needed |
 | `vault_unavailable` | Required store/credential version cannot be obtained safely |
-| `challenge_expired` | Challenge expired before dispatch; prepare a fresh challenge |
-| `auth_replay` | A one-use proof or placeholder was already consumed |
+| `placeholder_invalid` | Placeholder expired, revoked, or outside its permitted binding |
+| `auth_in_progress` | Another login exchange is active for this context; inspect status |
 | `interaction_unavailable` | Required trusted interaction cannot be completed |
 | `observation_unavailable` | Required observation admission failed |
 | `upstream_unavailable` | Connection failed with known non-dispatch, where provable |
 | `outcome_unknown` | Dispatch may have occurred; inspect state, do not blindly repeat |
 | `result_unavailable` | Dispatch state remains known but result content was not retained |
 
-Authentication mode is operator-pinned per route. A failed new-protocol
-exchange, a 401 response, or attacker-controlled discovery metadata MUST NOT
-cause a downgrade to password, bearer, or cookie mode.
+The authentication profile is operator-pinned per route. A 401 response or
+attacker-controlled discovery metadata MUST NOT select a different account,
+credential, authentication mechanism, or destination. Failed authentication
+never authorizes broader access or fallback to caller-supplied secrets.

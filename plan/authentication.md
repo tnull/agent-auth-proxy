@@ -1,44 +1,47 @@
-# Legacy authentication and credential injection
+# Authentication and credential injection
 
-## Compatibility guarantee
+## Credential isolation guarantee
 
-Legacy mode lets an unchanged supported site receive its usual password and
+The proxy lets an unchanged supported site receive its usual password and
 cookies while the agent sees only fake credentials and sanitized responses.
 It requires a site-specific resource profile and the
-[password-manager interface](password-manager.md). It is not a new
-authentication protocol between the daemon and that site.
+[password-manager interface](password-manager.md). The daemon uses the site's
+existing authentication protocol.
 
-A fake password is a one-use instruction to the daemon, not a password-derived
-proof that the site can verify. The upstream password and cookies retain their
-native replay properties. The proxy prevents their disclosure through managed
-interfaces and restricts their use, but cannot make a stolen upstream cookie
-one-use at an unchanged server.
+A fake password identifies a credential substitution within an authenticated
+proxy context. It is reusable within that context until expiry or revocation;
+possession alone does not authorize a login. The upstream password and cookies
+retain their native properties. The proxy prevents their disclosure through
+managed interfaces and restricts their use. Duplicate business actions remain
+subject to authorization and application idempotency, independently of whether
+the agent knows a real credential.
 
 ## Issuance and binding
 
-`vault.get_login` / logical `legacy.prepare` returns a password of this form:
+`vault.get_login` / logical `auth.prepare` returns a password of this form:
 
 ```text
-aap_lp1_<unpadded-base64url-of-32-random-bytes>
+aap_pw1_<unpadded-base64url-of-32-random-bytes>
 ```
 
 The complete value is 51 ASCII characters. If the username is private, issue
-an independent 51-character `aap_lu1_` value too. Both map to one attempt and
-expire together. Never derive the placeholder from the real password. A public
-`sha256(URI || session_challenge)` construction adds no authentication by itself
-and introduces representation ambiguity; explicit random handles with stored
-bindings are the baseline.
+an independent 51-character `aap_un1_` value too. Both map to the same credential
+binding and expire together. Never derive a placeholder from the real password;
+use random opaque values with explicit stored bindings.
 
-The daemon records an attempt bound to tenant, agent session, item/account,
+The daemon records a placeholder binding to tenant, agent session, item/account,
 credential version, auth context, exact normalized HTTPS origin and login target
 (including approved query), method, media type, credential field selectors,
-grant, expiry, and state `issued`. The allowed lifetime is at most 120 seconds.
-Possession of the fake password outside the bound session grants no authority.
+grant, expiry, and state `active`. Lifetime is finite, selected by operator
+policy, and capped by context, session, and grant expiry. A binding becomes
+`expired` or `revoked`; successful substitution does not consume it. Possession
+of the fake password outside the bound session grants no authority.
 
-Issuing another attempt does not increase the session's login budget. Allow
-at most one active login exchange per auth context; parallel accounts or
-isolated browser sessions need separate contexts. A new issuance explicitly
-replaces and invalidates any previous unused attempt for that context.
+Issuance or reuse does not increase the session's login budget. Each submission
+requires its own authorization and quota check. Allow at most one active login
+exchange per auth context; reject a concurrent exchange with `auth_in_progress`.
+Parallel accounts or isolated browser sessions need separate contexts. A new
+issuance for an existing context replaces and revokes its previous placeholders.
 
 ## Submission rules
 
@@ -67,22 +70,25 @@ Before releasing credentials, the daemon MUST:
 4. Reject duplicate credential fields, type mismatches, substrings, malformed
    encodings, and recognized credential placeholders in any other field,
    header, or URI. An invalid/expired placeholder is never forwarded as a
-   literal password. The reserved `aap_lp1_` / `aap_lu1_` namespaces may only
+   literal password. The reserved `aap_pw1_` / `aap_un1_` namespaces may only
    appear in their approved substitution locations on these routes.
 5. Bind/validate CSRF and pre-login state according to the profile. Authorize
    the final operation and approval, if required. Recheck store availability,
    credential version, grant validity, and session lifetime.
-6. Atomically move the attempt from `issued` to `consumed` before any real
-   credential bytes leave the daemon. Replace only those parsed values with
-   the pinned real values, re-encode correctly, recompute framing, and send
-   over verified TLS to the exact admitted endpoint.
+6. Admit the login operation with current context validity, concurrency, and
+   budget checks before any real credential bytes leave the daemon. Replace
+   only the designated parsed values with the pinned real values, re-encode
+   correctly, recompute framing, and send over verified TLS to the exact
+   admitted endpoint. Do not consume the credential placeholders.
 
-Failed local validation releases no credential. Once consumed, the attempt
-never becomes usable again, including after authentication failure, connection
-loss, or a lost response. A site login failure is not a reason to try another
-stored password or account automatically.
+Failed local validation releases no credential. Reusing a valid placeholder
+requires a new authorized login operation and does not make an uncertain earlier
+submission safe to retry. The common request-ID contract prevents duplicate
+dispatch for the same operation. A site login failure is not a reason to try
+another stored password or account automatically. Apply attempt limits to
+failed logins as well as successful ones.
 
-This mode permits form serialization changes but preserves the meaning of
+Form substitution permits serialization changes but preserves the meaning of
 unmodified fields. Byte-signed forms, unsupported character sets, or ambiguous
 parsers require a specific adapter or rejection. No password substitution is
 allowed in a GET query, URL userinfo, arbitrary message text, logs, or uploads.
@@ -140,9 +146,11 @@ storage, expected login action, and exact request/response locations. Pre-login
 cookies remain private. A declared noncredential CSRF field may be exposed if
 the profile permits; a value equal to a secret cookie or otherwise usable as a
 credential must remain private and be replaced with a session-bound placeholder.
-CSRF placeholders use `aap_lc1_` plus 32 random bytes in base64url, are bound to
-the attempt and field, and are consumed together with it. A generic HTML/script
-rewriter is not assumed.
+CSRF placeholders use `aap_cs1_` plus 32 random bytes in base64url and are bound
+to the context, form target, field, and current upstream CSRF value. Their
+lifetime and permitted use follow that site's CSRF rules; rotation invalidates
+the old mapping. Reusable password placeholders never bypass CSRF validation.
+A generic HTML/script rewriter is not assumed.
 
 Redirect handling is profile-defined. Check every hop's scheme, origin, method,
 target, selected jar, and policy. Never carry a substituted password body through
@@ -178,11 +186,12 @@ Record remote outcome separately. Operator revocation removes the ability to
 log in again; simple logout alone does not remove a standing login grant.
 
 Context expiry, session termination, and credential/store revocation invalidate
-local cookie authority. A daemon restart drops baseline jars and pending
-attempts; persistent session recovery is a future opt-in profile. Never revive
-an old fake password or silently attach another session's cookies.
+local cookie authority and credential placeholders. A daemon restart drops
+baseline jars, placeholder bindings, and pending login operations; persistent
+session recovery is a future opt-in profile. Never revive an expired/revoked
+fake password or silently attach another session's cookies.
 
-## Existing API keys, OAuth, and MCP authentication
+## API keys, OAuth, and MCP authentication
 
 For a model provider or other fixed API profile, resolve the permitted secret
 item and insert its required header at final dispatch. The agent may use a
@@ -198,16 +207,18 @@ interaction must use the future trusted user channel, not expose refresh tokens
 or approval authority in model context.
 [OAuth security BCP](https://www.rfc-editor.org/rfc/rfc9700.html)
 
-These are explicit compatibility profiles with weaker upstream replay
-guarantees than `AAP-CR/1`. A failed signature challenge never activates them.
+Each mechanism is selected by an approved resource profile. Authentication
+failures never select a different credential or expand the permitted scope.
 
 ## Acceptance scenarios
 
 - Site/item MCP discovery and fake username/password submission produce a
   successful login with all actual secrets confined to daemon/store/upstream.
-- The same fake password fails on a second use, another session/account/origin,
-  altered action/query, or a different body field. Parallel redemption has one
-  winner and sends one real credential-bearing request.
+- A valid fake password can be reused for a separately authorized login within
+  its bound context. It fails in another session/account/origin, with an altered
+  action/query or field, or after expiry, revocation, or credential rotation.
+- Duplicate request IDs never dispatch the same login twice. Concurrent login
+  exchanges cannot race the context's cookies or bypass attempt limits.
 - Duplicate fields, nested JSON ambiguity, malicious form actions, unexpected
   encodings, and placeholder substrings do not cause substitution or forwarding.
 - Pre-login CSRF, Set-Cookie on error/redirect, rotation, deletion, account
@@ -215,6 +226,7 @@ guarantees than `AAP-CR/1`. A failed signature challenge never activates them.
 - A 307 to another site never forwards the password; a permitted post-login GET
   transition gets only its own authorized cookies.
 - Lost login responses, invalid credentials, locked stores, password rotation,
-  restart, and interrupted observation do not resurrect one-use attempts.
+  restart, and interrupted observation do not revive invalidated bindings or
+  trigger automatic retries after uncertain dispatch.
 - Password echoes and declared body tokens are withheld/redacted; unsupported
   script authentication returns an explicit compatibility error.

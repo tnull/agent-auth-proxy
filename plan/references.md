@@ -1,30 +1,22 @@
-# Sources, alternatives, and Loupe findings
+# Sources and Loupe findings
 
 Research date: 2026-09-22. Sources distinguish published specifications,
-changing drafts, local evidence, and project proposals.
+local evidence, and project proposals.
 
 ## Standards assessment
 
 | Source | Contribution / decision |
 | --- | --- |
-| [AAuth overview](https://www.aauth.dev/) | Candidate ecosystem for identity/delegation; use a pinned draft for wire requirements |
-| [AAuth revision 10](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-10) | Individual Internet-Draft dated 2026-08-06, not an adopted standard |
-| [AAuth section 12.8.4.2](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-10#section-12.8.4.2) | Optional within-window replay caching does not establish mandatory one-use challenges |
-| [HTTP Message Signatures, RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html) | Standard signature serialization and component coverage; application requirements remain necessary |
-| [Digest Fields, RFC 9530](https://www.rfc-editor.org/rfc/rfc9530.html) | Standard content-byte digest field |
-| [DPoP, RFC 9449](https://www.rfc-editor.org/rfc/rfc9449.html) | Sender-constrained OAuth option with different request-binding properties |
-| [OAuth security BCP, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Security reference for compatibility token acquisition/refresh |
+| [OAuth security BCP, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Security reference for token acquisition/refresh |
 | [Cookies, RFC 6265](https://www.rfc-editor.org/rfc/rfc6265.html) | Base cookie semantics; additional browser behavior needs explicit profiles |
 | [HTTP early data, RFC 8470](https://www.rfc-editor.org/rfc/rfc8470.html) | Replay concerns support disabling early data on authenticated paths |
 | [MCP authorization, 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) | Separate local authorization and upstream OAuth audience/token handling |
 | [MCP security practices](https://modelcontextprotocol.io/docs/2025-11-25/tutorials/security/security_best_practices) | Confused-deputy and token-passthrough concerns |
 
-Pin draft revisions for interoperability claims and review upgrades explicitly.
-The `AAP-CR/1` nonce endpoint, enrollment assumptions, state machine, limits,
-custom headers, and MCP vault schemas are project proposals; the RFCs do not
-standardize them. Choosing strict signatures is a design inference from the
-requested one-use, query/body-bound behavior, not a claim that AAuth or DPoP is
-unsuitable generally.
+Pin protocol revisions for interoperability claims and review upgrades explicitly.
+The local context/placeholder contracts and MCP vault schemas are project
+proposals; the cited standards do not define them. Resources continue to use
+their existing authentication mechanisms.
 
 ## Local Loupe baseline
 
@@ -61,8 +53,7 @@ Scope differences from the inspected Loupe implementation:
   the private Set-Cookie capture and secret-response filtering required here.
 - Its documented default permits public IPv4 egress. Complete interception in
   this plan requires all sandbox egress to use the mediator instead.
-- It does not implement this plan's resource nonce verifier or observation
-  export contract.
+- It does not implement this plan's observation export contract.
 
 These are source-based scope differences, not claims of newly demonstrated
 vulnerabilities in Loupe's intended deployment.
