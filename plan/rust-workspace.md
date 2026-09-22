@@ -135,6 +135,13 @@ The daemon's credential-free `mcp-bridge` subcommand composes the client and MCP
 adapter, while the trusted `serve` subcommand composes the complete broker.
 Bridge mode never opens the secret store or loads privileged daemon configuration.
 
+The proposed [TCP stream binding](tcp-binding.md) also uses the session socket.
+Keep its credential-free DTO/frame contracts in `aap-types`, HTTP upgrade in
+`aap-http`, and agent-side handling in `aap-client`; the engine remains the sole
+admission and lifecycle authority. Trusted embedders use equivalent bounded
+stream operations without needing the HTTP framing. No additional protocol
+crate or dependency is planned for this binding.
+
 Upstream MCP traffic still passes through engine admission, authentication, and
 observation. The MCP SDK must not independently open upstream HTTP connections,
 follow redirects, or refresh tokens outside that path. Choose its client/transport

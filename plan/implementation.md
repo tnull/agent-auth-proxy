@@ -237,9 +237,11 @@ pure protocol tests first, then engine integration and an actual daemon/TLS
 fixture. Keep trusted remote state in `aap-mcp-upstream`, not the credential-free
 local adapter. Store API-key injection alone does not establish MCP mediation.
 
-For TCP, implement the [destination-bound relay contract](tcp.md): first specify
-the versioned local stream binding, then test shared admission/approval and
-duplex/half-close semantics, then prove the actual daemon and sandbox path.
+For TCP, implement the [destination-bound relay contract](tcp.md) and proposed
+[version 1 local binding](tcp-binding.md): first test strict framing and upgrade
+admission, then shared approval/capacity and duplex/half-close semantics, then
+prove the actual daemon and sandbox path. Include reserved status/cancel
+capacity across adapters, pending-attachment loss, and missing terminal frames.
 Keep byte relay separate from inspected CONNECT, with no credential lookup or
 raw fallback after inspection failure. Opening a stream approves a bounded
 connection, not its individual future application actions.

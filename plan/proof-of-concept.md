@@ -58,6 +58,9 @@ The [TCP relay contract](tcp.md) narrows the byte-stream fixture to an explicitl
 enrolled credential-free service. Its duplex/half-close, shared capacity,
 approval, and observation acceptance checks are W7 gates. An arbitrary raw
 channel does not prove plaintext inspection or per-action authorization.
+The proposed [local wire binding](tcp-binding.md) adds strict HTTP upgrade and
+binary-frame fixtures, explicit terminal delivery, and reserved control capacity;
+it is not an implemented endpoint until the daemon/client checks pass.
 
 ## Initial finite limits
 
@@ -82,7 +85,8 @@ Zero must not mean unlimited, and chunking cannot bypass total-byte limits.
 | General request body | 1 MiB, unless an explicit supported streaming-upload profile exists |
 | Ordinary streamed response or TCP direction | 32 MiB total; bounded incremental buffers |
 | Upstream connection establishment | 10 seconds |
-| Stream inactivity / total operation duration | 60 seconds / 10 minutes |
+| HTTP stream inactivity / total operation duration | 60 seconds / 10 minutes |
+| TCP phase deadlines | 10-second local handshake, up to 5-minute approval, 10-second preparation/dial, up to 10-minute connected lifetime, 2-second terminal delivery; always capped by authority expiry |
 | Catalog input | 1 MiB and 1,000 enrolled items |
 | Observation retained content | 8 MiB per session and 64 MiB globally; bounded event count as well |
 

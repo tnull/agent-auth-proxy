@@ -49,7 +49,9 @@ The [TCP contract](tcp.md) separately defines proposed byte-channel admission,
 half-close, and terminal outcomes. It does not reinterpret an HTTP target as
 an unrestricted tunnel. The frozen stream operation describes the connection
 and its limits, not the future application bytes; connection approval is not
-per-action consent. Its versioned local wire binding remains a W7 design gate.
+per-action consent. The proposed [version 1 local binding](tcp-binding.md)
+specifies a session-socket upgrade, bounded frames, and explicit terminal
+outcomes; implementation and conformance remain W7 gates.
 
 `request_id` is an unpadded base64url encoding of 16 random bytes (22 characters),
 unique within a local session. The proxy remembers its frozen operation and

@@ -92,11 +92,13 @@ directional send-end, and terminal complete/incomplete status. It must:
 - Keep cancellation/status responsive when data buffers or stream slots are
   exhausted; a client need not drain its payload to revoke the operation.
 
-Choose and document the exact versioned local wire binding before implementing
-W7 ingress, with parser limits and negative fixtures. This is not an additional
-MCP tool in the first profile: the bounded JSON tool surface is not a duplex
-byte channel. A later credential-free sandbox bridge may adapt ordinary local
-TCP clients to one fixed enrolled resource, without gaining direct egress.
+The proposed [version 1 local binding](tcp-binding.md) uses an HTTP/1.1 upgrade
+on the existing session socket, then bounded binary frames with explicit
+directional end and terminal outcome. Its parser, capacity, and negative
+fixtures are W7 implementation gates. This is not an additional MCP tool in
+the first profile: the bounded JSON tool surface is not a duplex byte channel.
+A later credential-free sandbox bridge may adapt ordinary local TCP clients
+to one fixed enrolled resource, without gaining direct egress.
 
 ## Approval and lifecycle
 
@@ -155,7 +157,11 @@ not just the nominal reader buffer. Socket and observation buffers have their
 own explicit bounds and are not covered by the relay payload allowance.
 Successful forwarding in either direction counts as application progress;
 keepalive, status polling, and empty local frames do not refresh the timer.
-Half-closed streams retain the same absolute deadline.
+Each direction also has a 60-second stalled-write ceiling while payload is
+pending; opposite-direction activity cannot keep a blocked writer alive.
+Half-closed streams retain the same absolute deadline. The [local binding's
+additional limits](tcp-binding.md#parser-capacity-and-scheduling-requirements)
+cover framing, pending attachments, and reserved status/cancellation capacity.
 
 Apply backpressure when a receiver is slow; do not create unbounded tasks,
 queues, or disk spools. In required observation mode, record the sanitized
@@ -187,9 +193,10 @@ with explicit metadata-only coverage, or deny if policy requires content.
 Keep policy/data contracts in `aap-types` and `aap-policy`; admission, approvals,
 tracking, and cancellation in `aap-engine`; and admitted dialing/duplex I/O in
 `aap-transport`. Use `aap-observe` for safe export. The daemon composes the local
-binding with `aap-client` and the existing ingress boundary. Select the binding
-before deciding whether it fits `aap-http`; do not add a crate or protocol
-dependency just for a copy loop. Embedders use the same engine semantics.
+binding with `aap-client` and the existing ingress boundary. The proposed
+[HTTP Upgrade binding](tcp-binding.md) belongs in `aap-http`, with credential-free
+frame contracts in `aap-types`; do not add a crate or protocol dependency just
+for a copy loop. Embedders use the same engine semantics.
 
 W7 needs real sockets and an actual daemon fixture, not only an in-memory copy
 test. Implement behavioral tests first, including:
