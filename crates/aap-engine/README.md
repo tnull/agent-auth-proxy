@@ -10,8 +10,8 @@ runtime is installed. Embedding this inside an untrusted agent is not isolation.
 Implemented paths include API-key brokerage, authorized catalog discovery,
 fake username/password issuance, and a bounded form/JSON website login through
 protected cookie access. The standalone daemon exposes the same service over
-its private local binding and owns configuration reload; MCP/CONNECT remain
-separate pending adapters.
+its private local binding and owns configuration reload. MCP and optional
+CONNECT adapters use the same session service and authorization pipeline.
 Execution futures wait for approval asynchronously; independent status/cancel
 calls remain usable. Dropping execution cancels preparation, or marks uncertain
 delivery once dispatch starts. Response-body completion controls final status.
@@ -57,8 +57,24 @@ credential POST, and JSON protected responses, all bounded to 256 KiB and fully
 inspected before delivery. Login success needs both the profile's explicit JSON
 value/status and its expected private cookies. HTTP 200 or a cookie alone is
 insufficient. Ordinary nonempty website request bodies must be JSON; unsupported
-content types, streaming website routes, and redirects fail closed. Model output
-still streams on the separate provider path.
+content types, streaming website routes, and undeclared redirects fail closed.
+Model output still streams on the separate provider path.
+
+An optional `post_login_redirect` is the exact canonical, query-free HTTPS URL
+of a separately enrolled same-origin GET route. It requires `success.status: 303`
+and the usual explicit JSON success evidence plus expected private cookies in
+that login response. Only a matching absolute or origin-relative Location is
+accepted; the engine returns the safe canonical Location without following it.
+It refuses the login page/POST target as a destination, other 3xx statuses,
+cross-origin/undeclared targets, ambiguous Location headers, and known-secret
+echoes in the destination. Login response bodies remain bounded sanitized JSON.
+Generic HTML/empty-body redirect logins and 302 semantics are not supported.
+
+Consume the successful response to completion before issuing a separate GET
+with the same context. That operation receives its own ID, policy, approval,
+DNS and store-version checks; no password body is carried forward. Dropping
+the response still invalidates uncertain context state. Redirect permission
+does not authorize an unseen next hop or confer permission to other resources.
 
 One exchange per context is admitted at a time. Login attempts are limited to
 five per item/session and twenty per item/broker in a ten-minute window;

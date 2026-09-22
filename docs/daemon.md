@@ -135,3 +135,5 @@ execution/status and external observation. Three additional process tests cover
 CONNECT with provider and website authentication, authority/context isolation,
 CA rotation, and independent upstream trust. Remote MCP and filesystem/network
 confinement remain unverified.
+The tunneled website test also runs the enrolled 303 variant: no implicit
+follow-up is sent, and its separately submitted GET has no credential body.

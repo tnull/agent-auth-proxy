@@ -5,6 +5,14 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
 fn website_origin(encoding: LoginEncoding, successful: bool) -> impl Future<Output = Origin> {
+    website_origin_redirect(encoding, successful, 200, None)
+}
+fn website_origin_redirect(
+    encoding: LoginEncoding,
+    successful: bool,
+    status: u16,
+    location: Option<&'static str>,
+) -> impl Future<Output = Origin> {
     Origin::with_handler(move |request| {
         let mut reply = match request.target.path() {
             "/login" => {
@@ -33,6 +41,10 @@ fn website_origin(encoding: LoginEncoding, successful: bool) -> impl Future<Outp
                     ),
                 }
                 let mut reply = Reply::body(json!({"authenticated":successful,"echo":"private-password private-user private-session private-csrf"}).to_string());
+                reply.status = status;
+                if let Some(location) = location {
+                    reply.headers.push(("location".into(), location.into()));
+                }
                 reply.headers.push((
                     "set-cookie".into(),
                     "session=private-session; Secure; HttpOnly; Path=/".into(),
@@ -55,6 +67,122 @@ fn website_origin(encoding: LoginEncoding, successful: bool) -> impl Future<Outp
             .push(("content-type".into(), "application/json".into()));
         reply
     })
+}
+
+#[tokio::test]
+async fn enrolled_login_redirects_keep_next_get_independent_and_never_repeat_passwords() {
+    for (status, location, successful, requires_approval, allowed) in [
+        (303, "/protected", true, false, true),
+        (303, "/protected", true, true, true),
+        (303, "https://other.test/protected", true, false, false),
+        (
+            303,
+            "/protected?password=private-password",
+            true,
+            false,
+            false,
+        ),
+        (307, "/protected", true, false, false),
+        (308, "/protected", true, false, false),
+        (303, "/protected", false, false, false),
+    ] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin =
+            website_origin_redirect(LoginEncoding::Form, successful, status, Some(location)).await;
+        let mut configuration = website_configuration(&fixture, LoginEncoding::Form).await;
+        let target = format!("{}/protected", fixture.origin.origin());
+        let Authentication::Form { login } = &mut configuration.profiles[0].auth else {
+            unreachable!()
+        };
+        login.post_login_redirect = Some(target.clone());
+        login.success.status = 303;
+        configuration.profiles[0]
+            .routes
+            .iter_mut()
+            .find(|route| route.path == "/protected")
+            .unwrap()
+            .require_approval = requires_approval;
+        let broker = Broker::new(configuration).unwrap();
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let input = request(
+            &fixture,
+            &login,
+            "POST",
+            "/session",
+            &login_body(&login, &csrf, LoginEncoding::Form),
+        );
+        let result = session.execute(input).await;
+        if allowed {
+            let response = result.expect("enrolled successful 303 login was refused");
+            assert_eq!(response.status(), 303);
+            assert_eq!(response.headers()["location"], target);
+            assert!(!response.headers().contains_key("set-cookie"));
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap()["echo"],
+                "[redacted] [redacted] [redacted] [redacted]"
+            );
+            assert_eq!(
+                fixture.origin.requests.lock().unwrap().len(),
+                2,
+                "redirect automatically dispatched another request"
+            );
+            assert_eq!(
+                session
+                    .auth_status(AuthContext {
+                        auth_context: login.auth_context.clone()
+                    })
+                    .await
+                    .unwrap()
+                    .state,
+                AuthState::Authenticated
+            );
+            let follow = session
+                .execute(request(&fixture, &login, "GET", "/protected", b""))
+                .await;
+            if requires_approval {
+                assert!(
+                    matches!(follow,Err(error) if error.code==ErrorCode::InteractionUnavailable)
+                );
+                assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+            } else {
+                let body = follow
+                    .unwrap()
+                    .into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes();
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&body).unwrap()["data"],
+                    "protected"
+                );
+                let requests = fixture.origin.requests.lock().unwrap();
+                assert_eq!(requests.len(), 3);
+                assert!(requests[2].body.is_empty());
+                assert_eq!(requests[2].method, "GET");
+            }
+        } else {
+            assert!(
+                result.is_err(),
+                "unsafe or unsuccessful redirect accepted: {status} {location}"
+            );
+            assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+            assert_ne!(
+                session
+                    .auth_status(AuthContext {
+                        auth_context: login.auth_context.clone()
+                    })
+                    .await
+                    .unwrap()
+                    .state,
+                AuthState::Authenticated
+            );
+        }
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 1);
+    }
 }
 fn request(
     fixture: &Fixture,

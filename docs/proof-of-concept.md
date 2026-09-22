@@ -403,3 +403,31 @@ and remaining compatibility/race cases are still open. W7/W8 also still require
 remote MCP/TCP, complete observation views and connection lifecycle, external
 reuse examples, and real confinement checks. Store-maintenance/recovery and
 native macOS custody remain on the original proof-of-concept plan.
+
+## Explicit post-login GET transition
+
+Website profiles can now enroll one exact same-origin query-free GET target
+through `post_login_redirect`, paired with `success.status: 303`. Explicit JSON
+success evidence and expected private cookies are still required; a redirect
+or cookie by itself is not login success. Cookie capture precedes redirect
+validation. Only the matching Location is reconstructed, after known-secret
+suppression checks. No internal follow-up, credential-body replay, or general
+redirect handling is enabled.
+
+Three new unit tests first failed against the pre-feature code, then passed:
+profile admission rejects unsafe destinations/statuses, the opt-in sanitizer
+preserves only safe 303 metadata, and the engine requires independent approval
+for the next GET while refusing 307/308, cross-origin, secret-bearing and
+unsuccessful responses. The ordinary response sanitizer still rejects all
+redirects. The real-daemon TLS website test now also runs a 303 variant and
+asserts exactly one separately submitted, body-free protected GET.
+
+This closes the first proof's declared redirect-transition example, not general
+browser/SSO compatibility. Unsupported HTML or empty-body success evidence,
+302, query-bearing redirects, cross-origin chains, and automatic following
+remain unsupported. Complete observation/coverage/reuse/confinement, remaining
+store-maintenance evidence, and macOS custody still need completion.
+
+All 110 unit tests, ten process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. Workspace checks pass on both; formatting, Clippy, and
+public documentation pass on 1.95.0. This feature adds no dependencies.

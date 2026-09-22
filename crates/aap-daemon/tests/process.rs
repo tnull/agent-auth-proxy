@@ -547,6 +547,12 @@ async fn website_fixture() -> Fixture {
 }
 
 async fn website_fixture_for(encoding: aap_types::profile::LoginEncoding) -> Fixture {
+    website_fixture_for_response(encoding, false).await
+}
+async fn website_fixture_for_response(
+    encoding: aap_types::profile::LoginEncoding,
+    redirect: bool,
+) -> Fixture {
     use aap_types::{
         CredentialFields,
         profile::{CsrfProfile, LoginEncoding, LoginProfile, LoginSuccess},
@@ -562,6 +568,7 @@ async fn website_fixture_for(encoding: aap_types::profile::LoginEncoding) -> Fix
                 }
                 assert_eq!(request.headers["cookie"],"pre=private-pre");
                 let mut reply = Reply::body(r#"{"authenticated":true,"echo":"private-website-password private-website-cookie"}"#);
+                if redirect {reply.status=303;reply.headers.push(("location".into(),"/protected".into()));}
                 reply.headers.push(("set-cookie".into(),"session=private-website-cookie; Secure; HttpOnly; Path=/".into())); reply
             },
             "/protected" => { assert!(request.headers["cookie"].to_str().unwrap().contains("session=private-website-cookie")); Reply::body(r#"{"data":"protected"}"#) },
@@ -641,8 +648,9 @@ async fn website_fixture_for(encoding: aap_types::profile::LoginEncoding) -> Fix
                 .into(),
             },
             username_visible: false,
+            post_login_redirect: redirect.then(|| format!("{}/protected", fixture.origin.origin())),
             success: LoginSuccess {
-                status: 200,
+                status: if redirect { 303 } else { 200 },
                 cookie_names: vec!["session".into()],
                 json_pointer: "/authenticated".into(),
                 expected: json!(true),

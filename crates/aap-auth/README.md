@@ -66,3 +66,11 @@ by these primitives.** In particular,
 neither a placeholder nor a CookieJar grants authority to dispatch a request.
 The [engine](../aap-engine/README.md) now integrates them for the controlled
 website profile exposed through the daemon's explicit local operation API.
+
+`sanitize_login_redirect` is an opt-in response transform for a 303 and an exact
+already-authorized HTTPS target. It reconstructs only the canonical Location,
+checks it against both existing secrets and newly captured cookie values, and
+sanitizes the response body. Other statuses/locations fail; the ordinary
+`sanitize_response` path still rejects every redirect. The helper neither
+decides login success nor follows the Location. An additional test covers this
+narrow transform and confirms the default path remains redirect-denying.

@@ -315,7 +315,11 @@ impl Session {
                 .jar
                 .capture(target, &mut parts.headers, SystemTime::now())?;
             state.template = state.template.merged(&cookies)?;
-            if parts.status.is_redirection() {
+            if parts.status.is_redirection()
+                && (!is_login
+                    || parts.status != http::StatusCode::SEE_OTHER
+                    || login.post_login_redirect.is_none())
+            {
                 return Err(ErrorCode::AuthProfileUnsupported.into());
             }
             let parsed: serde_json::Value =
@@ -344,6 +348,9 @@ impl Session {
                 if !success {
                     state.jar.clear();
                     state.csrf = None;
+                    if parts.status.is_redirection() {
+                        return Err(ErrorCode::AuthFailed.into());
+                    }
                 }
             } else if matches!(parts.status.as_u16(), 401 | 403) {
                 state.jar.clear();
@@ -367,7 +374,18 @@ impl Session {
                 .map_err(|never| match never {})
                 .boxed_unsync(),
         );
-        let response = sanitize_response(private_response, template)?;
+        let response = if private_response.status().is_redirection() {
+            aap_auth::sanitize_login_redirect(
+                private_response,
+                template,
+                login
+                    .post_login_redirect
+                    .as_deref()
+                    .ok_or(ErrorCode::AuthProfileUnsupported)?,
+            )?
+        } else {
+            sanitize_response(private_response, template)?
+        };
         let (parts, body) = response.into_parts();
         let bytes = Limited::new(body, route.max_response_bytes.min(256 * 1024))
             .collect()

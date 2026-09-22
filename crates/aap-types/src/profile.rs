@@ -14,6 +14,10 @@ pub struct LoginProfile {
     pub username_visible: bool,
     pub success: LoginSuccess,
     pub csrf: Option<CsrfProfile>,
+    /// Exact same-origin GET target after a successful 303 login response.
+    /// The client issues a separate request; the proxy never follows implicitly.
+    #[serde(default)]
+    pub post_login_redirect: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

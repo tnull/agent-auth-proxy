@@ -64,6 +64,9 @@ CONNECT, upgrades, ambiguous headers/framing, caller Authorization/Cookie,
 Expect, trailers, and reserved proxy/authority headers are refused. Framing and
 connection headers are consumed locally; remaining application headers still
 need explicit route permission. No implicit redirect or retry is performed.
+An explicitly enrolled successful 303 login can expose its one safe Location;
+the client must complete that response and issue a separately authorized GET.
+See the [website redirect profile](../crates/aap-engine/README.md).
 
 The engine selects exactly one granted profile matching method and target.
 For a website profile, the client first obtains fake credentials using the

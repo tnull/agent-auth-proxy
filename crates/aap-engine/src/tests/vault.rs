@@ -62,6 +62,7 @@ pub(super) async fn website_configuration(
                 password: password.into(),
             },
             username_visible: false,
+            post_login_redirect: None,
             success: LoginSuccess {
                 status: 200,
                 cookie_names: vec!["session".into()],

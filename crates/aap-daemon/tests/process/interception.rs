@@ -354,8 +354,14 @@ async fn connect_proxy_brokers_provider_and_rejects_virtual_host_escape() {
 
 #[tokio::test]
 async fn connect_website_uses_only_a_unique_prepared_context() {
+    for redirect in [false, true] {
+        website_context_flow(redirect).await;
+    }
+}
+async fn website_context_flow(redirect: bool) {
     use aap_types::{AuthContext, AuthState, GetLogin};
-    let mut fixture = website_fixture().await;
+    let mut fixture =
+        website_fixture_for_response(aap_types::profile::LoginEncoding::Form, redirect).await;
     let root = enroll_ca(&mut fixture).await;
     let (mut child, ready) = fixture.start().await;
     let control = fixture.root.join("r").join(ready.control_socket);
@@ -401,22 +407,30 @@ async fn connect_website_uses_only_a_unique_prepared_context() {
         login.credentials.password.value,
         page["csrf"].as_str().unwrap()
     );
-    assert_eq!(
-        request(
-            &socket,
+    let (status, headers, _) = request(
+        &socket,
+        &authority,
+        root.clone(),
+        http_request(
+            "POST",
+            "/session",
             &authority,
-            root.clone(),
-            http_request(
-                "POST",
-                "/session",
-                &authority,
-                "application/x-www-form-urlencoded",
-                body.into()
-            )
-        )
-        .await
-        .0,
-        200
+            "application/x-www-form-urlencoded",
+            body.into(),
+        ),
+    )
+    .await;
+    assert_eq!(status, if redirect { 303 } else { 200 });
+    if redirect {
+        assert_eq!(
+            headers["location"],
+            format!("{}/protected", fixture.origin.origin())
+        );
+    }
+    assert_eq!(
+        fixture.origin.requests.lock().unwrap().len(),
+        2,
+        "redirect dispatched another upstream action"
     );
     assert_eq!(
         client
@@ -442,6 +456,12 @@ async fn connect_website_uses_only_a_unique_prepared_context() {
     )
     .await;
     assert_eq!(status, 200);
+    {
+        let requests = fixture.origin.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[2].method, "GET");
+        assert!(requests[2].body.is_empty());
+    }
     assert_eq!(
         serde_json::from_slice::<Value>(&body).unwrap()["data"],
         "protected"

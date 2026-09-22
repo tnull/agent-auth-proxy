@@ -1,6 +1,8 @@
 //! Private authentication transformations; no independent network access.
 pub mod cookies;
 pub mod login;
+#[cfg(test)]
+mod redirect_tests;
 use aap_secrets::{Field, Snapshot};
 use aap_types::{ErrorCode, Response, Result};
 use base64::Engine;
@@ -168,8 +170,37 @@ impl Redactor {
         Ok(output.into())
     }
 }
-pub fn sanitize_response(response: Response, mut redactor: Redactor) -> Result<Response> {
-    if response.status().is_redirection()
+/// Sanitize a separately authorized 303 login redirect, without following it.
+pub fn sanitize_login_redirect(
+    response: Response,
+    redactor: Redactor,
+    target: &str,
+) -> Result<Response> {
+    let parsed = aap_policy::Target::parse(target)?;
+    if parsed.as_str() != target
+        || parsed.query().is_some()
+        || response.status() != http::StatusCode::SEE_OTHER
+        || response.headers().get_all("location").iter().count() != 1
+        || response
+            .headers()
+            .get("location")
+            .is_none_or(|location| location != target && location != parsed.path())
+    {
+        return Err(ErrorCode::InspectionUnavailable.into());
+    }
+    sanitize_inner(response, redactor, Some(target))
+}
+
+pub fn sanitize_response(response: Response, redactor: Redactor) -> Result<Response> {
+    sanitize_inner(response, redactor, None)
+}
+
+fn sanitize_inner(
+    response: Response,
+    mut redactor: Redactor,
+    redirect: Option<&str>,
+) -> Result<Response> {
+    if (response.status().is_redirection() && redirect.is_none())
         || response.status().is_informational()
         || response.headers().get_all("content-type").iter().count() != 1
         || response
@@ -241,10 +272,19 @@ pub fn sanitize_response(response: Response, mut redactor: Redactor) -> Result<R
         return Err(ErrorCode::LimitExceeded.into());
     }
     redactor.longest = redactor.patterns.first().map_or(1, Vec::len);
+    if let Some(target) = redirect
+        && redactor.fresh().feed(target.as_bytes(), true)?.as_ref() != target.as_bytes()
+    {
+        return Err(ErrorCode::InspectionUnavailable.into());
+    }
     let (parts, body) = response.into_parts();
-    http::Response::builder()
+    let mut builder = http::Response::builder()
         .status(parts.status)
-        .header("content-type", media)
+        .header("content-type", media);
+    if let Some(target) = redirect {
+        builder = builder.header("location", target);
+    }
+    builder
         .body(
             Sanitized {
                 body,

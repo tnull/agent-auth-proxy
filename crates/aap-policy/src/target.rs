@@ -222,6 +222,22 @@ impl ResourceProfile {
                 let target = Target::parse(&login.target)?;
                 let page_route = self.authorize("GET", &page, 0)?;
                 let login_route = self.authorize("POST", &target, 0)?;
+                if let Some(redirect) = &login.post_login_redirect {
+                    let destination = Target::parse(redirect)?;
+                    let route = self.authorize("GET", &destination, 0)?;
+                    if login.success.status != 303
+                        || destination.as_str() != redirect
+                        || destination.query().is_some()
+                        || redirect == &login.page
+                        || redirect == &login.target
+                        || route.streaming
+                        || route.max_response_bytes > 256 * 1024
+                    {
+                        return Err(invalid());
+                    }
+                } else if !(200..300).contains(&login.success.status) {
+                    return Err(invalid());
+                }
                 let is_json = login.encoding == LoginEncoding::Json;
                 let selector_valid = |value: &str| {
                     !value.is_empty()
@@ -458,6 +474,7 @@ pub(crate) mod tests {
                     password: "password".into(),
                 },
                 username_visible: false,
+                post_login_redirect: None,
                 success: LoginSuccess {
                     status: 200,
                     cookie_names: vec!["__Host-session".into()],
@@ -507,5 +524,62 @@ pub(crate) mod tests {
         login.fields.password = "/password".into();
         login.csrf.as_mut().unwrap().submit_field = "/csrf".into();
         assert!(baseline.validate().is_ok());
+    }
+
+    #[test]
+    fn login_redirects_require_an_exact_enrolled_same_origin_get() {
+        use aap_types::profile::{LoginEncoding, LoginProfile, LoginSuccess};
+        let mut baseline = profile();
+        baseline.routes[0].path = "/session".into();
+        for path in ["/login", "/done"] {
+            let mut route = baseline.routes[0].clone();
+            route.method = "GET".into();
+            route.path = path.into();
+            baseline.routes.push(route);
+        }
+        baseline.auth = Authentication::Form {
+            login: LoginProfile {
+                page: "https://example.test/login".into(),
+                target: "https://example.test/session".into(),
+                encoding: LoginEncoding::Form,
+                fields: aap_types::CredentialFields {
+                    username: "user".into(),
+                    password: "password".into(),
+                },
+                username_visible: false,
+                csrf: None,
+                success: LoginSuccess {
+                    status: 303,
+                    cookie_names: vec!["session".into()],
+                    json_pointer: "/authenticated".into(),
+                    expected: serde_json::json!(true),
+                },
+                post_login_redirect: Some("https://example.test/done".into()),
+            },
+        };
+        baseline
+            .validate()
+            .expect("enrolled redirect profile denied");
+        for case in 0..9 {
+            let mut candidate = baseline.clone();
+            let Authentication::Form { login } = &mut candidate.auth else {
+                unreachable!()
+            };
+            match case {
+                0 => login.post_login_redirect = Some("https://other.test/done".into()),
+                1 => login.post_login_redirect = Some("https://example.test/undeclared".into()),
+                2 => login.post_login_redirect = Some(login.page.clone()),
+                3 => login.post_login_redirect = Some(login.target.clone()),
+                4 => login.success.status = 307,
+                5 => login.success.status = 308,
+                6 => login.post_login_redirect = None,
+                7 => candidate.routes[2].streaming = true,
+                _ => candidate.routes[2].method = "POST".into(),
+            }
+            assert!(
+                candidate.validate().is_err(),
+                "unsafe redirect profile accepted: {case}"
+            );
+        }
     }
 }
