@@ -28,9 +28,9 @@ now correlates sanitized agent/upstream views, ordered content, and logical
 request endings. Collectors have operator-enrolled private session/content
 subscriptions with isolated cursors and acknowledgments. Remote MCP, TCP,
 complete connection coverage, and confinement demonstrations remain pending.
-The trusted [remote MCP message component](crates/aap-mcp-upstream/README.md)
-now validates enrolled tools and sanitized JSON/SSE messages independently;
-its private-session and daemon integration is not yet implemented.
+The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
+now validates enrolled tools and sanitized JSON/SSE messages and manages private
+upstream contexts independently; its daemon integration is not yet implemented.
 
 ## Development
 

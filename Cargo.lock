@@ -144,6 +144,7 @@ version = "0.1.0"
 dependencies = [
  "aap-auth",
  "aap-types",
+ "http",
  "rmcp",
  "serde",
  "serde_json",

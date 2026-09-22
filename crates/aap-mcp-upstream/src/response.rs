@@ -57,7 +57,11 @@ impl Profile {
             let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
             wire::object(&params, &["_meta"])?;
             wire::empty_meta(&params)?;
-            return Ok(Message::Ping(Ping { id: id.clone() }));
+            return Ok(Message::Ping(Ping {
+                id: id.clone(),
+                owner: None,
+                used: std::sync::atomic::AtomicBool::new(false),
+            }));
         }
         let object = wire::object(&message, &["jsonrpc", "id", "result", "error"])?;
         if object.get("jsonrpc") != Some(&json!("2.0"))

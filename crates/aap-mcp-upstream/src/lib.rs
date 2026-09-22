@@ -1,13 +1,15 @@
-//! Trusted remote MCP message boundary, without transport or store access.
+//! Trusted remote MCP message/session boundary, without transport or store access.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 
+mod context;
 mod profile;
 mod request;
 mod response;
 mod sse;
 mod wire;
+pub use context::{Completion, Context, Exchange, Outgoing, ResponseDecoder, SafeResponse, State};
 pub use sse::SseDecoder;
 
 pub const VERSION: &str = "2025-11-25";
@@ -62,6 +64,8 @@ pub enum Message {
 }
 pub struct Ping {
     id: Value,
+    owner: Option<Arc<()>>,
+    used: std::sync::atomic::AtomicBool,
 }
 
 #[cfg(test)]

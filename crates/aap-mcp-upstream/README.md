@@ -4,14 +4,15 @@ Trusted, connector-free validation and transformation for the pinned remote
 MCP profile. This crate is not an agent client or a complete remote gateway.
 See [the contract](../../plan/remote-mcp.md).
 
-The first slice supplies reviewed tool contracts, bounded request/response
-validation, structural response sanitization, and incremental SSE framing.
-The caller must enforce session lifecycle, admitted destinations, current
+The component supplies reviewed tool contracts, bounded request/response
+validation, structural response sanitization, incremental SSE framing, and
+private upstream context/handshake state. The caller must bind contexts to local
+sessions/resources/accounts and enforce admitted destinations, current
 credential/policy versions, approval, quotas, observation, and cancellation.
 Validated messages do not authorize a connection or credential use.
 
-The engine integration, private upstream session custody, and actual daemon
-remote-MCP fixture remain pending. Do not advertise remote MCP support from
+The engine integration and actual daemon remote-MCP fixture remain pending.
+Do not advertise remote MCP support from
 these pure protocol tests alone. This crate starts no runtime or connector and
 does not retrieve credentials or launch background work. SDK types remain
 private to its implementation.
@@ -38,3 +39,47 @@ this defense's guarantee.
 
 Run `cargo test -p aap-mcp-upstream --locked` with a task-specific
 `CARGO_TARGET_DIR` under `/tmp`.
+
+## Context and exchange ownership
+
+Create one `Context` per trusted local session/resource/account binding. It
+caps lifetime at ten minutes and the handshake at thirty seconds. Each
+`begin` reserves one exchange, assigns a non-reused upstream ID, and rejects
+concurrent caller-ID collisions. Contexts allow eight work exchanges and two
+control exchanges; the engine must additionally impose the shared per-session
+and broker quotas. Context admission never creates a socket or resolves a key.
+
+`outgoing` provides private headers/body for final engine admission and injection.
+It is preparation, not a send or an idempotency guarantee. `start_response`
+validates HTTP status/headers and adds captured session IDs to the private
+redaction template before body processing. Notification acknowledgments must
+have empty 202 bodies. Unexpected statuses, cookie/session replacement headers,
+encoding, malformed JSON/SSE, and framing limits invalidate the context.
+
+Feed bounded chunks through the returned decoder. Server pings are private
+one-shot child work; reserve engine-wide control capacity and apply current
+approval/custody/observation policy before `ping_reply` and dispatch. A ping
+response's HTTP acknowledgement must also be checked by the host; this component
+does not send it or mark it remotely accepted. Never return `Outgoing` or raw
+ping bodies to an agent or observer.
+
+`finish` produces an opaque `Completion` after protocol EOF. Its sanitized
+response may be inspected for observation, but delivery and context writeback
+require current host authorization plus `complete` on the same live context
+and exchange. Initialization stages the private session header; only its
+matching commit permits `notifications/initialized`, whose accepted completion
+admits tool work. A protocol initialization error invalidates the context.
+
+Every operation-drop path must call `abandon` on its exchange. Normal abandoned
+work loses its mapping without a claim of remote rollback; an abandoned
+handshake invalidates the context. Known cancellation maps only owned live work
+and returns its local operation ID so the engine can cancel the actual task.
+Unknown/completed/initialization MCP cancellation IDs are ignored. Local status
+and remote notification delivery remain engine responsibilities.
+
+`invalidate` makes pending decoders/completions unusable. `close(now)` first
+checks expiry/failure and removes local authority, optionally returning private
+cleanup headers once. Sending DELETE still requires current engine permission;
+expired, failed, or already closed contexts provide no cleanup credential.
+Fresh initialization requires a new context and never erases the engine's
+operation history or authorizes replay.

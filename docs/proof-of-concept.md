@@ -571,3 +571,44 @@ store-maintenance evidence, and native macOS custody also remain outstanding.
 All 146 unit tests, twelve process tests, and the compile-fail doctest pass on
 Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
 warning-free Clippy, and warning-free public documentation pass on 1.95.0.
+
+## Private remote MCP context lifecycle
+
+The remote component now owns isolated upstream context identities, private
+session headers, finite handshake/lifetime state, non-reused upstream request
+IDs, and bounded work/control exchange maps. Complete validated initialization
+stages a private header; an opaque matching completion commits it, and a later
+accepted initialized notification commits readiness. No tool request can skip
+those transitions. Public safe responses contain no native session header.
+
+HTTP response admission checks status, singleton headers, session syntax,
+encoding, and cookie/session replacement attempts. JSON and SSE collectors
+require one complete matching final response, suppress captured session/key
+echoes, and accept only empty notification acknowledgments. Protocol failures
+poison the entire context and its outstanding decoders. Uncertain abandoned
+ordinary work loses its mapping; an abandoned handshake invalidates its owner.
+
+Cancellation maps only current-context live IDs to the engine's supplied
+operation identifiers. Completed, unknown, and initialization MCP cancellation
+IDs are ignored. A cancelled response cannot commit. Server pings are one-shot
+private child preparations bound to a live parent/decoder, including provisional
+initialization session state; the component never sends them. Cleanup first
+removes local authority, and expired/failed/closed contexts yield no private
+cleanup headers. Dropping the owner invalidates retained decoders.
+
+Seven lifecycle tests were observed failing against initial fail-closed stubs.
+Targeted cleanup/fault and owner-drop cases also failed before their corrections.
+Ten context tests now pass, including additional duplicate-header, failed
+initialization, notification-body, completion-token and ID-exhaustion checks.
+Only the existing `http` dependency was added to this crate; no new external
+package or credential-free client dependency was introduced.
+
+Engine binding to sessions/resources/accounts, store-version checks, approvals,
+shared quotas, cancellation task ownership, required observation, child-response
+handling, trailers, and actual admitted HTTPS dispatch remain integration work.
+These pure state/decoder tests do not complete remote MCP mediation or W7, and
+the other previously listed proof-of-concept gates remain outstanding.
+
+All 156 unit tests, twelve process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target workspace checks pass on both; formatting,
+warning-free Clippy, and warning-free public documentation pass on 1.95.0.
