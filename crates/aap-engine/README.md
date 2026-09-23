@@ -49,6 +49,14 @@ TCP revocation closes the sockets and capacity owned by retained TCP handles;
 that does not establish the broader drain contract for all adapters.
 See the remaining [lifecycle acceptance gates](../../plan/lifecycle.md).
 
+Every credential-resolution path checks session authority immediately before
+calling the store and after its result returns, including website passwords
+and remote MCP control/cleanup keys. A native future becoming ready in the same
+poll as closure must not continue into secret preparation just because the
+outer cancellation wait was checked earlier. These checks discard that late
+result; they neither interrupt native work nor establish atomic ordering of
+every dispatch/state-commit race.
+
 ## TCP admission and connection ownership
 
 The separate `Configuration.tcp_profiles` collection is validated at broker

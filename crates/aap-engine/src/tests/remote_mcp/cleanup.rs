@@ -1,5 +1,31 @@
 use super::*;
 
+#[tokio::test]
+async fn broker_close_during_resolution_discards_the_returned_cleanup_key() {
+    use crate::tests::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};
+    let fixture = fixture(204, "", true).await;
+    let mut configuration = config(&fixture);
+    let store = ClosingStore::install(&mut configuration);
+    let broker = Arc::new(Broker::new(configuration).unwrap());
+    let session = broker.create_session(options()).unwrap();
+    handshake(&fixture, &session).await;
+    closed(
+        session.execute(delete(&fixture)).await.unwrap(),
+        "confirmed",
+    )
+    .await;
+    handshake(&fixture, &session).await;
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 5);
+    store.arm(&broker, CloseAt::Resolve);
+    let input = delete(&fixture);
+    let id = input.request_id.clone();
+    assert!(session.execute(input).await.is_err());
+    assert!(broker.is_closed());
+    no_authentication_prepared(&fixture, &id);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 5);
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 6);
+}
+
 async fn fixture(status: u16, body: &'static str, native: bool) -> Fixture {
     let mut fixture = Fixture::new().await;
     let next = AtomicUsize::new(0);

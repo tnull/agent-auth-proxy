@@ -1499,3 +1499,35 @@ race proof is introduced here. Deterministic late native results, late private
 state writeback, all-adapter drain/deadline/failure handling, reload retirement,
 and shared daemon/embedded lifecycle parity remain required. Operational store
 recovery, native Keychain, and the other open proof-of-concept gates also remain.
+
+## Rejecting ready store results after closure
+
+Five deterministic regression tests exposed a gap in the initial broker-close
+integration: a successful store future could close the broker and return ready
+in the same poll, after the outer cancellation branch had already been checked.
+The provider path could then start another secret lookup after revalidation;
+provider and remote MCP paths could prepare credentials after resolution.
+Website processing reached a revoked placeholder instead of discarding the
+late result at the session boundary. The tested cases made no extra upstream
+request, but they still crossed the intended custody/preparation boundary.
+
+All four resolution paths now use one engine-owned check immediately before
+starting the store call and after it returns: provider, form/JSON website,
+remote MCP application work, and remote MCP control/cleanup. A result returned
+after closure is discarded before the caller uses it for authentication.
+This does not change the store trait or interrupt a native call.
+
+The tests use a counted real SQLCipher adapter wrapped by a one-shot closure
+barrier, positive HTTPS/website/MCP controls, exact native resolution and origin
+receipt counts, and per-operation authentication observations. JSON/SSE remote
+calls and an independently authorized DELETE cleanup are covered. All five
+tests failed on the pre-fix production code, passed with the correction, and
+failed again with only the production correction removed before restoration.
+No assertion was weakened and no fixed sleep selects the closure ordering.
+
+All-target checks, 289 unit tests, nineteen ordinary daemon process tests, and
+the compile-fail doctest pass on Rust 1.95.0 and 1.88.0. Formatting, warning-free
+Clippy, and public documentation pass on 1.95.0. Independent consumer and opt-in
+confinement tests were not rerun in this correction. No dependency or public
+API was added. Broader dispatch/writeback ordering, native-work accounting, and
+aggregate resource drain remain open; this is not the complete L3/L4 contract.

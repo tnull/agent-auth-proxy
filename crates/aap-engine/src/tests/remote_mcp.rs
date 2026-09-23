@@ -9,6 +9,30 @@ mod cleanup;
 mod controls;
 
 #[tokio::test]
+async fn broker_close_during_resolution_discards_the_returned_remote_mcp_key() {
+    use super::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};
+    for sse in [false, true] {
+        let fixture = fixture(sse, false).await;
+        let mut config = configuration(&fixture);
+        let store = ClosingStore::install(&mut config);
+        let broker = Arc::new(Broker::new(config).unwrap());
+        let session = broker.create_session(options()).unwrap();
+        handshake(&fixture, &session).await;
+        response_json(session.execute(request(&fixture, call())).await.unwrap()).await;
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        store.arm(&broker, CloseAt::Resolve);
+        let input = request(&fixture, call());
+        let id = input.request_id.clone();
+        assert!(matches!(session.execute(input).await,
+            Err(error) if error.code == ErrorCode::SessionInvalid));
+        assert!(broker.is_closed());
+        no_authentication_prepared(&fixture, &id);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 4);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+    }
+}
+
+#[tokio::test]
 async fn broker_close_rejects_remote_mcp_reuse_and_pending_initialization_delivery() {
     for sse in [false, true] {
         let fixture = fixture(sse, false).await;

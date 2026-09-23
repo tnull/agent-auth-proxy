@@ -5,6 +5,56 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
 #[tokio::test]
+async fn broker_close_during_resolution_rejects_late_website_credentials() {
+    use super::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};
+    for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let mut configuration = website_configuration(&fixture, encoding).await;
+        let store = ClosingStore::install(&mut configuration);
+        let broker = Arc::new(Broker::new(configuration).unwrap());
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let body = login_body(&login, &csrf, encoding);
+        session
+            .execute(request(&fixture, &login, "POST", "/session", &body))
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        session
+            .execute(request(&fixture, &login, "GET", "/protected", b""))
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        store.arm(&broker, CloseAt::Resolve);
+        let input = request(&fixture, &login, "POST", "/session", &body);
+        let id = input.request_id.clone();
+        let error = match session.execute(input).await {
+            Ok(_) => panic!("closed login succeeded"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.code,
+            ErrorCode::SessionInvalid,
+            "late credentials reached website processing after broker closure"
+        );
+        assert!(broker.is_closed());
+        assert_eq!(context.state.lock().unwrap().status, AuthState::Revoked);
+        no_authentication_prepared(&fixture, &id);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 2);
+    }
+}
+
+#[tokio::test]
 async fn broker_close_invalidates_authenticated_cookie_and_placeholder_state() {
     for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
         let mut fixture = Fixture::new().await;

@@ -416,6 +416,20 @@ impl Session {
             Ok(())
         }
     }
+    /// A ready native result can race closure within the same future poll.
+    /// Recheck before starting custody work and before using its returned value;
+    /// the outer cancellation select alone cannot establish either boundary.
+    async fn resolve_current(
+        &self,
+        store: &dyn SecretStore,
+        reference: &aap_secrets::ItemRef,
+        lease: &aap_secrets::Lease,
+    ) -> Result<aap_secrets::Snapshot> {
+        self.check()?;
+        let result = store.resolve(reference, lease).await;
+        self.check()?;
+        result.map_err(Into::into)
+    }
     fn operation(&self, id: &str) -> Result<Arc<Operation>> {
         self.check()?;
         self.core

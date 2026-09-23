@@ -211,9 +211,8 @@ impl Session {
                 .map_err(|_| ErrorCode::RequestInvalid)?;
             *outgoing.headers_mut() = prepared.headers;
             let authenticated: Result<()> = async {
-                let snapshot = binding
-                    .store
-                    .resolve(&binding.reference, &binding.lease)
+                let snapshot = self
+                    .resolve_current(binding.store.as_ref(), &binding.reference, &binding.lease)
                     .await?;
                 PreparedKey::new(&snapshot, prefix)?.inject(&mut outgoing, header)?;
                 Ok(())

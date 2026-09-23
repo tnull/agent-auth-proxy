@@ -333,7 +333,9 @@ impl Session {
                 .map_err(|_| ErrorCode::LimitExceeded)?,
         );
         store.revalidate(&reference, &metadata.lease).await?;
-        let snapshot = store.resolve(&reference, &metadata.lease).await?;
+        let snapshot = self
+            .resolve_current(store.as_ref(), &reference, &metadata.lease)
+            .await?;
         let key = PreparedKey::new(&snapshot, prefix)?;
         let mut outgoing = http::Request::builder()
             .method(request.method.as_str())

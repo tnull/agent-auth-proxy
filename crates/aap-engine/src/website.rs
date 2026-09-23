@@ -217,7 +217,9 @@ impl Session {
                 .get(&binding.item.credential.store)
                 .ok_or(ErrorCode::VaultUnavailable)?;
             let reference = ItemRef::new(binding.item.credential.key.clone())?;
-            let snapshot = store.resolve(&reference, &binding.lease).await?;
+            let snapshot = self
+                .resolve_current(store.as_ref(), &reference, &binding.lease)
+                .await?;
             let (body, redactor) = parsed.substitute(&snapshot)?;
             let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
             state.template = state.template.merged(&redactor)?;

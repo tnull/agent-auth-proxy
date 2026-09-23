@@ -453,9 +453,8 @@ impl Session {
                 request
             };
             let authenticated: Result<Redactor> = async {
-                let snapshot = binding
-                    .store
-                    .resolve(&binding.reference, &binding.lease)
+                let snapshot = self
+                    .resolve_current(binding.store.as_ref(), &binding.reference, &binding.lease)
                     .await?;
                 PreparedKey::new(&snapshot, prefix)?.inject(&mut outgoing, header)
             }

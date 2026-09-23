@@ -1,5 +1,141 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CloseAt {
+    Revalidate,
+    Resolve,
+}
+
+/// Return a successful native result in the same poll that closes authority.
+/// This deliberately does not yield after closure: the caller must recheck it.
+pub(super) struct ClosingStore {
+    inner: Arc<dyn SecretStore>,
+    armed: Mutex<Option<(Weak<Broker>, CloseAt)>>,
+}
+impl ClosingStore {
+    pub(super) fn install(configuration: &mut Configuration) -> Arc<Self> {
+        let store = Arc::new(Self {
+            inner: configuration.stores["default"].clone(),
+            armed: Mutex::new(None),
+        });
+        configuration.stores.insert("default".into(), store.clone());
+        store
+    }
+    pub(super) fn arm(&self, broker: &Arc<Broker>, phase: CloseAt) {
+        assert!(
+            self.armed
+                .lock()
+                .unwrap()
+                .replace((Arc::downgrade(broker), phase))
+                .is_none()
+        );
+    }
+    fn returned(&self, phase: CloseAt) {
+        let close = {
+            let mut armed = self.armed.lock().unwrap();
+            if armed
+                .as_ref()
+                .is_some_and(|(_, selected)| *selected == phase)
+            {
+                armed.take()
+            } else {
+                None
+            }
+        };
+        if let Some((broker, _)) = close {
+            broker.upgrade().unwrap().close().unwrap();
+        }
+    }
+}
+impl SecretStore for ClosingStore {
+    fn status(&self) -> BoxFuture<'_, aap_secrets::Result<aap_secrets::StoreStatus>> {
+        self.inner.status()
+    }
+    fn metadata<'a>(
+        &'a self,
+        item: &'a ItemRef,
+    ) -> BoxFuture<'a, aap_secrets::Result<aap_secrets::ItemMetadata>> {
+        self.inner.metadata(item)
+    }
+    fn revalidate<'a>(
+        &'a self,
+        item: &'a ItemRef,
+        lease: &'a aap_secrets::Lease,
+    ) -> BoxFuture<'a, aap_secrets::Result<()>> {
+        Box::pin(async move {
+            self.inner.revalidate(item, lease).await?;
+            self.returned(CloseAt::Revalidate);
+            Ok(())
+        })
+    }
+    fn resolve<'a>(
+        &'a self,
+        item: &'a ItemRef,
+        lease: &'a aap_secrets::Lease,
+    ) -> BoxFuture<'a, aap_secrets::Result<aap_secrets::Snapshot>> {
+        Box::pin(async move {
+            let snapshot = self.inner.resolve(item, lease).await?;
+            self.returned(CloseAt::Resolve);
+            Ok(snapshot)
+        })
+    }
+}
+
+pub(super) fn no_authentication_prepared(fixture: &Fixture, request_id: &str) {
+    let records = fixture.recorder.read(None, 256).unwrap();
+    assert!(records.gap.is_none());
+    assert!(
+        !records.records.iter().any(|record| {
+            (record.event.request_id.as_deref() == Some(request_id)
+                || record.event.parent_request_id.as_deref() == Some(request_id))
+                && matches!(
+                    record.event.data,
+                    aap_observe::Data::AuthTransition { inserted: true, .. }
+                )
+        }),
+        "credentials were prepared after their broker closed"
+    );
+}
+
+#[tokio::test]
+async fn broker_close_during_revalidation_prevents_a_new_secret_lookup() {
+    late_provider_result(CloseAt::Revalidate).await;
+}
+
+#[tokio::test]
+async fn broker_close_during_resolution_discards_the_returned_provider_key() {
+    late_provider_result(CloseAt::Resolve).await;
+}
+
+async fn late_provider_result(phase: CloseAt) {
+    let fixture = Fixture::new().await;
+    let mut configuration = fixture.configuration();
+    let store = ClosingStore::install(&mut configuration);
+    let broker = Arc::new(Broker::new(configuration).unwrap());
+    let session = broker.create_session(options()).unwrap();
+    session
+        .execute(fixture.request())
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 1);
+    store.arm(&broker, phase);
+    let request = fixture.request();
+    let id = request.request_id.clone();
+    invalid(session.execute(request).await);
+    assert!(broker.is_closed());
+    assert_eq!(
+        fixture.resolutions.load(Ordering::SeqCst),
+        if phase == CloseAt::Resolve { 2 } else { 1 },
+        "closure allowed a new secret lookup after revalidation"
+    );
+    no_authentication_prepared(&fixture, &id);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 1);
+}
+
 fn invalid<T>(result: Result<T>) {
     assert!(
         matches!(result, Err(error) if error.code == ErrorCode::SessionInvalid),
