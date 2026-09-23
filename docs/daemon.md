@@ -142,20 +142,59 @@ finite first-PoC ceilings, not production resource-sizing guarantees.
 ## Reload, shutdown, and restart
 
 Reload validates the complete candidate config/catalog pair before activation.
-Failure leaves the running generation and its sessions unchanged. Success
-requires a strictly newer revision and revokes **all** existing sessions,
-including unchanged grants. The trusted launcher creates fresh attachments.
-All scoped collector attachments are also revoked.
+Rejection before commitment does not change authority; unrelated shutdown or
+revocation can still close it. Commitment requires a strictly newer revision
+and closes the entire old broker, including handles outside the attachment map
+and sessions with unchanged grants. The trusted launcher creates fresh
+attachments. Scoped collector attachments are also removed during cleanup.
 Changes to store location/alias, runtime directory, or observation configuration
 require restart; there is no partial backend/collector migration during reload.
+
+The host orders old-broker admission closure and new-generation publication
+under its state boundary, without invoking cancellation wakers there. Cleanup
+runs afterward, outside that boundary. Shutdown winning before commitment
+prevents a prepared candidate from reopening admission; shutdown ordered after
+commitment closes the newly installed broker too.
+
+A committed reload returns HTTP success with this shape, even when subsequent
+authority cleanup fails:
+
+```json
+{
+  "configuration_revision": 2,
+  "retirement": {
+    "configuration_revision": 1,
+    "authority_closed": true,
+    "authority_cleanup": "complete",
+    "drain_confirmed": false
+  }
+}
+```
+
+`authority_cleanup` is `pending`, `complete`, or `failed`; it describes broker
+cancellation/private-state cleanup, not joined tasks, collector delivery, or
+completed native calls. `drain_confirmed` is currently always false. Cleanup
+failure does not restore old grants or turn commitment into a rejected reload.
+Status includes `daemon_epoch`, `admission_closed`, and `last_reload` (null before
+the first commitment), in addition to the current revision and attachment counts.
+It can expose pending cleanup while a committed reload is still executing.
+If the operator loses the reply, query live status and compare the epoch and
+revision; do not automatically retry or infer rejection from a missing record.
+Only the last commitment is retained, not a durable acknowledgment history.
+
+Post-commit cleanup currently has no suspension point, so dropping its request
+future cannot interrupt that continuation between publication and notification.
+It is still synchronous and not deadline-bounded. Host-owned asynchronous
+retirement, retained-task/native-work accounting, bounded generation retention,
+and the full disconnect/held-resource acceptance matrix remain open.
 
 SIGTERM/SIGINT revoke sessions, stop listeners, lock the store, and remove only
 unchanged socket entries owned by that run. A persistent private `daemon.lock`
 file provides a nonblocking exclusive process lock. Readiness is discovery, not
 proof that a process is still alive; do not reuse attachments after failure.
 
-Signal shutdown now uses the engine's `Broker::close()` admission/revocation
-operation before removing session and observer attachments. A cleanup error
+Signal shutdown closes admission under the host state boundary, then invokes
+`Broker::close()` and removes attachments outside it. A cleanup error
 does not skip removal of the other attachments. This closes broker authority,
 not the complete [bounded-drain acceptance gate](../plan/lifecycle.md): joining
 all attachment/transport work and accounting for non-interruptible native calls

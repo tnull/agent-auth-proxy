@@ -12,11 +12,20 @@ EOF on standard input from a trusted launcher. It does not accept an unlock key
 in arguments, environment variables, or JSON. See the [operator contract](../../docs/daemon.md)
 and [process tests](tests/process.rs) for configuration and synthetic execution.
 
-Ten real-process tests exercise brokerage/observation, reload, startup refusal,
-crash/restart, expiry, and the controlled website login/password-manager flow
+Nineteen ordinary real-process tests exercise brokerage/observation, reload,
+startup refusal, crash/restart, expiry, and the controlled website login/password-manager flow
 with two isolated clients, including stdio MCP form/JSON login and optional
-CONNECT inspection with a store-held CA key. This is not yet
-the complete proxy: remote MCP/TCP,
-native macOS custody, and sandbox enforcement remain pending.
+CONNECT inspection with a store-held CA key, pinned remote MCP, and constrained
+TCP. Six opt-in confinement tests exercise these routes in Linux namespaces;
+the full adversarial deployment matrix and native macOS custody remain pending.
+
+Reload now retires the entire old broker before publishing a new generation,
+including retained handles outside the attachment map. Shutdown cannot be undone
+by a prepared candidate. Operator results distinguish commitment from authority
+cleanup and explicitly leave resource drain unconfirmed. Five lifecycle tests
+exercise rejected/prepared reloads, retained authority, cleanup failure, and
+both shutdown orderings. Bounded asynchronous retirement and complete task/native
+cleanup accounting remain separate acceptance gates.
+
 No system service, global CA installation, production credential enrollment, or
 neighboring-project modification is implied.

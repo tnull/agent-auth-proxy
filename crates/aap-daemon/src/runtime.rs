@@ -14,6 +14,11 @@ use std::{
     time::{Duration, Instant},
 };
 mod observation;
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+type ReloadHook = Box<dyn FnOnce() -> Result<()> + Send>;
 
 struct ConfiguredResolver {
     hosts: HashMap<String, Vec<IpAddr>>,
@@ -75,16 +80,30 @@ struct Generation {
     sessions: HashMap<String, Attachment>,
     observers: HashMap<String, observation::Attachment>,
     interception: Option<Arc<crate::interception::StoreInterception>>,
+    last_reload: Option<ReloadOutcome>,
 }
 struct Control {
+    daemon_epoch: String,
     directory: Arc<PrivateDir>,
     runtime: Arc<PrivateDir>,
     store: Arc<SqliteStore>,
     recorder: Recorder,
     state: Mutex<Generation>,
     reload_gate: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    prepared_hook: Mutex<Option<ReloadHook>>,
+    #[cfg(test)]
+    cleanup_hook: Mutex<Option<ReloadHook>>,
 }
 impl Control {
+    #[cfg(test)]
+    fn run_hook(hook: &Mutex<Option<ReloadHook>>) -> Result<()> {
+        let callback = hook.lock().unwrap().take();
+        match callback {
+            Some(callback) => callback(),
+            None => Ok(()),
+        }
+    }
     fn create(&self, request: CreateSession) -> Result<SessionAttachment> {
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
         Self::prune(&mut state);
@@ -161,13 +180,21 @@ impl Control {
             .retain(|_, attachment| attachment.valid(&state.sessions));
     }
     fn shutdown(&self) -> Result<()> {
-        let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
-        let closed = state.broker.close();
-        state.observers.clear();
-        state.sessions.clear();
+        let (broker, observers, sessions) = {
+            let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            state.broker.close_admission();
+            (
+                state.broker.clone(),
+                std::mem::take(&mut state.observers),
+                std::mem::take(&mut state.sessions),
+            )
+        };
+        let closed = broker.close();
+        // Wakers and attachment destructors must not run under publication.
+        drop((observers, sessions));
         closed
     }
-    async fn reload(&self) -> Result<u64> {
+    async fn reload(&self) -> Result<ReloadOutcome> {
         let _exclusive = self
             .reload_gate
             .try_lock()
@@ -185,7 +212,12 @@ impl Control {
                 crate::interception::StoreInterception::new(configuration, self.store.clone())
             })
             .transpose()?;
+        #[cfg(test)]
+        Self::run_hook(&self.prepared_hook)?;
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+        if state.broker.is_closed() {
+            return Err(ErrorCode::SessionInvalid.into());
+        }
         if loaded.configuration.configuration_revision
             <= state.loaded.configuration.configuration_revision
             || loaded.configuration.store != state.loaded.configuration.store
@@ -195,16 +227,46 @@ impl Control {
         {
             return Err(ErrorCode::RequestInvalid.into());
         }
-        for attachment in state.sessions.values() {
-            state.broker.revoke(&attachment.session)?;
-        }
-        state.sessions.clear();
         let revision = loaded.configuration.configuration_revision;
-        state.observers.clear();
+        let mut outcome = ReloadOutcome {
+            configuration_revision: revision,
+            retirement: RetirementStatus {
+                configuration_revision: state.loaded.configuration.configuration_revision,
+                authority_closed: true,
+                authority_cleanup: AuthorityCleanup::Pending,
+                drain_confirmed: false,
+            },
+        };
+        // All fallible preparation precedes this commitment. No notification,
+        // cleanup callback, or suspension can interleave closure and publication.
+        state.broker.close_admission();
+        let retired = std::mem::replace(&mut state.broker, candidate);
+        let observers = std::mem::take(&mut state.observers);
+        let sessions = std::mem::take(&mut state.sessions);
         state.loaded = loaded;
-        state.broker = candidate;
         state.interception = interception;
-        Ok(revision)
+        state.last_reload = Some(outcome.clone());
+        drop(state);
+
+        let failed = retired.close().is_err();
+        #[cfg(test)]
+        let failed = Self::run_hook(&self.cleanup_hook).is_err() || failed;
+        // Preserve the existing attachment cancellation behavior without
+        // presenting abortion/drop as proof of task or native-resource drain.
+        drop((observers, sessions));
+        outcome.retirement.authority_cleanup = if failed {
+            AuthorityCleanup::Failed
+        } else {
+            AuthorityCleanup::Complete
+        };
+        // No error after commitment may imply that the old generation remains
+        // active. Recover poisoned status storage only to retain that evidence;
+        // ordinary control operations continue to reject the poisoned state.
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .last_reload = Some(outcome.clone());
+        Ok(outcome)
     }
     async fn dispatch(&self, request: http::Request<Incoming>) -> Result<Response> {
         validate_local_request(&request)?;
@@ -239,15 +301,20 @@ impl Control {
             }
             "/aap/operator/v1/reload" => {
                 let _: Empty = decode(&body)?;
-                json_response(&serde_json::json!({"configuration_revision":self.reload().await?}))
+                json_response(&self.reload().await?)
             }
             "/aap/operator/v1/status" => {
                 let _: Empty = decode(&body)?;
                 let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
                 Self::prune(&mut state);
-                json_response(
-                    &serde_json::json!({"configuration_revision":state.loaded.configuration.configuration_revision,"sessions":state.sessions.len(),"observers":state.observers.len()}),
-                )
+                json_response(&serde_json::json!({
+                    "daemon_epoch": self.daemon_epoch,
+                    "configuration_revision": state.loaded.configuration.configuration_revision,
+                    "admission_closed": state.broker.is_closed(),
+                    "sessions": state.sessions.len(),
+                    "observers": state.observers.len(),
+                    "last_reload": state.last_reload,
+                }))
             }
             _ => Err(ErrorCode::PolicyDenied.into()),
         }
@@ -344,6 +411,7 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
         })
         .transpose()?;
     let control = Arc::new(Control {
+        daemon_epoch: epoch.clone(),
         directory,
         runtime: runtime.clone(),
         store: store.clone(),
@@ -354,8 +422,13 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
             sessions: HashMap::new(),
             observers: HashMap::new(),
             interception,
+            last_reload: None,
         }),
         reload_gate: tokio::sync::Mutex::new(()),
+        #[cfg(test)]
+        prepared_hook: Mutex::new(None),
+        #[cfg(test)]
+        cleanup_hook: Mutex::new(None),
     });
     let ready = Ready {
         schema_version: 1,

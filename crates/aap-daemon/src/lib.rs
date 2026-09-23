@@ -81,6 +81,30 @@ pub struct SessionAttachment {
 pub struct SessionReference {
     pub session_id: String,
 }
+/// A committed configuration replacement, independent of cleanup success.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReloadOutcome {
+    pub configuration_revision: u64,
+    pub retirement: RetirementStatus,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetirementStatus {
+    pub configuration_revision: u64,
+    pub authority_closed: bool,
+    pub authority_cleanup: AuthorityCleanup,
+    /// False until all resource-ownership and join obligations are established.
+    /// Successful authority cleanup alone cannot set this to true.
+    pub drain_confirmed: bool,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorityCleanup {
+    Pending,
+    Complete,
+    Failed,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}

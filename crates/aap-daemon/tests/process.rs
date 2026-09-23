@@ -356,11 +356,25 @@ async fn invalid_reload_preserves_authority_and_valid_reload_revokes_old_session
     fixture.catalog.items.clear();
     fixture.config.profiles.clear();
     fixture.write();
-    assert!(
-        local(control.clone(), "/aap/operator/v1/reload", json!({}))
-            .await
-            .0
-            .is_success()
+    let (status, outcome) = local(control.clone(), "/aap/operator/v1/reload", json!({})).await;
+    assert!(status.is_success());
+    let outcome: ReloadOutcome = serde_json::from_value(outcome).unwrap();
+    assert_eq!(outcome.configuration_revision, 2);
+    assert_eq!(outcome.retirement.configuration_revision, 1);
+    assert!(outcome.retirement.authority_closed);
+    assert_eq!(
+        outcome.retirement.authority_cleanup,
+        AuthorityCleanup::Complete
+    );
+    assert!(!outcome.retirement.drain_confirmed);
+    let (status, current) = local(control.clone(), "/aap/operator/v1/status", json!({})).await;
+    assert!(status.is_success());
+    assert_eq!(current["daemon_epoch"], ready.daemon_epoch);
+    assert_eq!(current["configuration_revision"], 2);
+    assert_eq!(current["admission_closed"], false);
+    assert_eq!(
+        current["last_reload"],
+        serde_json::to_value(&outcome).unwrap()
     );
     assert!(client.execute(fixture.request()).await.is_err());
     assert!(

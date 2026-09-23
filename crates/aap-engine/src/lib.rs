@@ -323,6 +323,26 @@ impl Broker {
         sessions.insert(id, Arc::downgrade(&core));
         Ok(Session { core })
     }
+    /// Irreversibly retire all broker authority without invoking cleanup.
+    ///
+    /// This shares the ordering boundary with session creation, final dispatch,
+    /// and completion. Existing handles immediately lose authority. No waker,
+    /// adapter callback, native call, or resource cleanup runs here, so a trusted
+    /// host can coordinate this transition with configuration publication.
+    /// Poisoned admission state is recovered only to fail closed.
+    ///
+    /// The host MUST subsequently call [`Self::close`] outside its publication
+    /// lock to notify cancellation and invalidate retained private state. This
+    /// method alone does not wake pending work or prove resource drain. Repeated
+    /// calls are safe; there is no operation that reopens the broker.
+    pub fn close_admission(&self) {
+        let _admission = self
+            .host
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.host.closed.store(true, Ordering::Release);
+    }
     /// Irreversibly stop session admission and revoke every live session.
     ///
     /// Concurrent creators either publish before closure and are revoked, or

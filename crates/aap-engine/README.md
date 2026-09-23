@@ -34,6 +34,14 @@ either fails with `SessionInvalid` or returns a session included in revocation.
 Repeated/concurrent closure is safe. `Broker::is_closed()` reports admission
 state, not successful resource cleanup. Restart requires a new broker.
 
+For configuration publication, `Broker::close_admission()` provides the first
+phase alone: it irreversibly closes every retained handle at the shared
+admission/dispatch/completion boundary without invoking wakers or cleanup.
+A trusted host can call it while publishing a replacement, then MUST call
+`close()` after releasing its publication lock. Merely closing admission does
+not notify pending work or discard private state. This API does not own host
+tasks, install a new generation, or lock shared stores.
+
 Closure cancels all session signals before attempting their local cleanup. A
 poisoned registry or session cleanup reports `InternalError`, keeps admission
 closed, and does not skip cancellation of other sessions. Repeating closure

@@ -411,3 +411,89 @@ async fn broker_close_stays_closed_and_notifies_every_session_on_cleanup_failure
     assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 0);
     assert!(fixture.origin.requests.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn admission_closure_defers_callbacks_until_host_publication_is_released() {
+    use std::task::{Context, Wake, Waker};
+
+    struct Probe {
+        broker: Weak<Broker>,
+        published: Arc<Mutex<bool>>,
+        wakes: AtomicUsize,
+        safe: AtomicBool,
+    }
+    impl Wake for Probe {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            let broker = self.broker.upgrade().unwrap();
+            let safe = broker.is_closed()
+                && broker.host.sessions.try_lock().is_ok()
+                && self.published.try_lock().is_ok_and(|state| *state);
+            self.safe.store(safe, Ordering::SeqCst);
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let fixture = Fixture::new().await;
+    let broker = Arc::new(Broker::new(fixture.configuration()).unwrap());
+    let other = Broker::new(fixture.configuration()).unwrap();
+    let session = broker.create_session(options()).unwrap();
+    session
+        .execute(fixture.request())
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap();
+    let published = Arc::new(Mutex::new(false));
+    let probe = Arc::new(Probe {
+        broker: Arc::downgrade(&broker),
+        published: published.clone(),
+        wakes: AtomicUsize::new(0),
+        safe: AtomicBool::new(false),
+    });
+    let waker = Waker::from(probe.clone());
+    let mut waiting = std::pin::pin!(session.core.cancelled.cancelled());
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    {
+        let mut state = published.lock().unwrap();
+        broker.close_admission();
+        broker.close_admission();
+        assert!(broker.is_closed());
+        assert_eq!(
+            probe.wakes.load(Ordering::SeqCst),
+            0,
+            "admission closure ran a cancellation callback"
+        );
+        assert!(!session.core.cancelled.is_cancelled());
+        invalid(broker.create_session(options()));
+        *state = true;
+    }
+    // Retained authority is already unusable, even before notification/cleanup.
+    rejects_every_entry(&session, &fixture).await;
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 1);
+    broker.close().unwrap();
+    assert!(session.core.cancelled.is_cancelled());
+    assert_eq!(probe.wakes.load(Ordering::SeqCst), 1);
+    assert!(probe.safe.load(Ordering::SeqCst));
+    let independent = other.create_session(options()).unwrap();
+    independent
+        .execute(fixture.request())
+        .await
+        .unwrap()
+        .into_body()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+}

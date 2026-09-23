@@ -1736,3 +1736,57 @@ This extends L6's local publication evidence without adding dependencies or wire
 fields. Generation replacement, complete daemon/embedded lifecycle parity,
 held-resource drain, and the remaining native custody/recovery gates are still
 open. It does not promise remote rollback or universal backend revocation.
+
+## Committed reload and deferred cancellation boundary
+
+`Broker::close_admission()` now supplies the irreversible authority transition
+without invoking cancellation wakers or cleanup. It uses the same exclusion
+boundary as session creation, final dispatch, and completion. Hosts must call
+`close()` after releasing their publication lock to notify pending work and
+invalidate private state; neither operation proves complete resource drain.
+
+The daemon coordinates that transition with candidate publication and shutdown.
+Reload closes the whole old broker, including retained sessions absent from its
+attachment map. Invalid candidates leave this attempt's authority unchanged;
+a prepared candidate cannot reopen a broker already closed by shutdown. When
+reload wins first, subsequent shutdown closes the new generation. Cancellation
+and attachment destruction run outside the host publication lock.
+
+Committed reloads return the installed revision and a separate retirement
+report. Broker cleanup failure is not returned as an unapplied configuration
+error and never restores old grants. Trusted status includes the daemon epoch,
+current admission state, and last committed reload, with pending/complete/failed
+authority-cleanup state. `drain_confirmed` remains false. The operator contract
+documents reconciliation after a missing reply and the absence of durable
+acknowledgment history. Agent data-plane schemas and dependencies are unchanged.
+
+Five daemon regressions cover retained broker/session handles, shutdown before
+preparation, shutdown at an explicit prepared-candidate barrier, injected cleanup
+failure after commitment, and shutdown after commitment. Positive discovery,
+fresh-generation admission, and an unlocked shared SQLCipher store accompany
+the denials. All five fail at their expected assertions with the prior production
+reload/shutdown methods restored (test-only hooks and report type declarations
+retained), then pass with the implementation restored. The existing real-process
+reload test also checks the new report and matching live status/epoch, preserving
+its counted-origin and rejected-candidate positive controls.
+
+An engine conformance test registers a real cancellation waker while a host
+publication lock is held. Admission-only closure rejects every retained session
+entry point without waking it; subsequent cleanup wakes it only after publication
+and engine admission locks are free. Real HTTPS requests and counted SQLCipher
+resolutions prove positive use, non-dispatch after retirement, and continued use
+by an independent broker sharing the same store.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0:
+320 unit tests, nineteen ordinary process tests, and the compile-fail doctest.
+All nine independent consumer tests pass on each compiler. Formatting,
+warning-free Clippy, and public docs pass on 1.95.0.
+All six opt-in Linux confinement tests also pass on each compiler, run serially
+without competing build/test workloads: 355 tests per compiler in total.
+
+This advances the L9 commitment boundary, not complete generation retirement or
+W4/W8 shutdown. Cleanup is still synchronous; bounded asynchronous ownership,
+task/socket/native-job joins, retention across generations, the one aggregate
+deadline, scoped-observer admission during retirement, and the full real-socket
+disconnect/held-resource matrix remain open. Native Keychain delivery and offline
+store recovery are also unfinished; no overall milestone is marked complete.
