@@ -22,10 +22,11 @@ the full adversarial deployment matrix and native macOS custody remain pending.
 Reload now retires the entire old broker before publishing a new generation,
 including retained handles outside the attachment map. Shutdown cannot be undone
 by a prepared candidate. Operator results distinguish commitment from authority
-cleanup and explicitly leave resource drain unconfirmed. Five lifecycle tests
+cleanup and explicitly leave resource drain unconfirmed. Ten lifecycle tests
 exercise rejected/prepared reloads, retained authority, cleanup failure, and
-both shutdown orderings. Bounded asynchronous retirement and complete task/native
-cleanup accounting remain separate acceptance gates.
+both shutdown orderings. Reload cleanup is now host-owned with a two-second
+wait, retained capacity after timeout, and joined attachment tasks. Complete
+transport/native-work accounting and whole-host shutdown remain separate gates.
 
 No system service, global CA installation, production credential enrollment, or
 neighboring-project modification is implied.

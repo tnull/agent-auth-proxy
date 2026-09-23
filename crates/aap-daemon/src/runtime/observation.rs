@@ -12,6 +12,12 @@ impl Attachment {
     pub(super) fn close_admission(&self) {
         self.subscription.close_admission();
     }
+    pub(super) fn cancel_listener(&self) {
+        self.shutdown.cancel();
+    }
+    pub(super) async fn join(&mut self) -> bool {
+        !matches!((&mut self.task).await, Ok(Ok(())))
+    }
     pub(super) fn valid(&self, sessions: &HashMap<String, super::Attachment>) -> bool {
         self.expires > Instant::now()
             && !self.task.is_finished()

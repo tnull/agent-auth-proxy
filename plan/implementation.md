@@ -228,6 +228,34 @@ matrix, including runtime teardown. Use existing crates and dependencies; choose
 Rust signatures and the operator response schema during that implementation
 slice, without changing the agent-facing protocol.
 
+Complete this lifecycle work in independently testable increments:
+
+1. Establish host-owned post-commit cleanup, a bounded operator wait, retained
+   ownership after caller cancellation, and a busy outcome while cleanup is
+   unfinished. Keep authority cleanup separate from confirmed resource drain.
+2. Account for each layer's actual resources: listener/connection tasks in
+   adapters, upstream drivers and held bodies in transport, active TCP/MCP work
+   in the engine, collector claims, and native calls in store adapters. For each,
+   identify who initiates cancellation and what evidence confirms termination.
+   Start with a response retained without further polling, since listener joins
+   alone cannot establish that this exchange's upstream connection has stopped.
+3. Exercise capacity across active and retired generations. Hold each resource
+   past its deadline, reject another retirement without changing authority, and
+   release its reservation only after actual termination. Include a separate
+   broker sharing the store: closure must not cancel its work or lock the shared
+   store, while still respecting the backend's combined native-work ceiling.
+4. Apply one absolute deadline to active-generation shutdown, previously retired
+   work, terminal observation, exclusive-store cleanup, and runtime teardown.
+   Combine delayed resources in one test; separate successful phase tests cannot
+   prove the aggregate budget. Late cleanup must remain owned and observable.
+5. Repeat commitment/disconnect and held-resource cases over actual operator
+   sockets and the independent embedding composition. Reconcile missing replies
+   through epoch/revision/status without replay; preserve uncertainty when the
+   host no longer retains a particular outcome.
+
+These are narrower delivery steps for L5/L8/L9, not extra protocol features or
+permission to mark the broader gates complete from attachment counts alone.
+
 ## W5–W6: password-manager vertical slice
 
 Implement `vault.search_items`, `vault.get_login`, `vault.auth_status`, and

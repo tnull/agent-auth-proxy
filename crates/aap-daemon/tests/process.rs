@@ -367,6 +367,9 @@ async fn invalid_reload_preserves_authority_and_valid_reload_revokes_old_session
         AuthorityCleanup::Complete
     );
     assert!(!outcome.retirement.drain_confirmed);
+    assert_eq!(outcome.retirement.attachment_tasks_pending, 0);
+    assert!(!outcome.retirement.attachment_cleanup_failed);
+    assert!(!outcome.retirement.cleanup_deadline_exceeded);
     let (status, current) = local(control.clone(), "/aap/operator/v1/status", json!({})).await;
     assert!(status.is_success());
     assert_eq!(current["daemon_epoch"], ready.daemon_epoch);

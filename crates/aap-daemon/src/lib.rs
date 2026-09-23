@@ -94,6 +94,9 @@ pub struct RetirementStatus {
     pub configuration_revision: u64,
     pub authority_closed: bool,
     pub authority_cleanup: AuthorityCleanup,
+    pub attachment_tasks_pending: usize,
+    pub attachment_cleanup_failed: bool,
+    pub cleanup_deadline_exceeded: bool,
     /// False until all resource-ownership and join obligations are established.
     /// Successful authority cleanup alone cannot set this to true.
     pub drain_confirmed: bool,

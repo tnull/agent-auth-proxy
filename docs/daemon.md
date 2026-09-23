@@ -167,6 +167,9 @@ authority cleanup fails:
     "configuration_revision": 1,
     "authority_closed": true,
     "authority_cleanup": "complete",
+    "attachment_tasks_pending": 0,
+    "attachment_cleanup_failed": false,
+    "cleanup_deadline_exceeded": false,
     "drain_confirmed": false
   }
 }
@@ -183,11 +186,26 @@ If the operator loses the reply, query live status and compare the epoch and
 revision; do not automatically retry or infer rejection from a missing record.
 Only the last commitment is retained, not a durable acknowledgment history.
 
-Post-commit cleanup currently has no suspension point, so dropping its request
-future cannot interrupt that continuation between publication and notification.
-It is still synchronous and not deadline-bounded. Host-owned asynchronous
-retirement, retained-task/native-work accounting, bounded generation retention,
-and the full disconnect/held-resource acceptance matrix remain open.
+Post-commit cleanup belongs to a retained daemon job, not the operator request.
+Blocking broker cleanup runs separately from the async executor. The job then
+cancels and joins every retired session/observer attachment task. Dropping an
+operator request does not cancel that work. Reload waits at most two seconds
+from commitment for this cleanup; a timeout returns a committed result with
+`cleanup_deadline_exceeded: true` and the currently known cleanup state.
+
+`attachment_tasks_pending` counts unjoined attachment tasks, not all underlying
+connections or native calls. A task failure sets `attachment_cleanup_failed`;
+it does not skip the remaining joins. The deadline flag remains true even if
+cleanup finishes later. Status continues to update after a caller disconnects.
+Only one unfinished cleanup job is admitted: another reload returns
+`limit_exceeded` before commitment until that job and its blocking work stop.
+Timeout does not release the slot. Unconfirmed joins after coordinator failure
+also keep it occupied, requiring controlled recovery rather than forgetting work.
+
+This is not complete resource-drain accounting. Upstream drivers, independently
+retained bodies, native store jobs, shared resource quotas across generations,
+and the full real-socket disconnect/held-resource matrix remain separate gates.
+`drain_confirmed` consequently remains false even after all attachment joins.
 
 SIGTERM/SIGINT revoke sessions, stop listeners, lock the store, and remove only
 unchanged socket entries owned by that run. A persistent private `daemon.lock`
@@ -201,6 +219,10 @@ not the complete [bounded-drain acceptance gate](../plan/lifecycle.md): joining
 all attachment/transport work and accounting for non-interruptible native calls
 under one aggregate deadline remain required. The existing listener join wait
 alone must not be described as that guarantee.
+Shutdown observes any retained reload job within the remaining listener cleanup
+budget and reports failure for unfinished/failed retirement. Active-generation
+cleanup, store locking, and runtime teardown are not yet all governed by that
+single deadline.
 
 After abrupt termination the kernel releases the lock, but old socket entries
 and readiness metadata can remain. Restart uses fresh epoch-qualified sockets

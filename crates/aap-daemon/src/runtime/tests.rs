@@ -3,6 +3,7 @@ use aap_types::{AgentService, SearchItems};
 use std::os::unix::fs::DirBuilderExt;
 
 mod observation;
+mod retirement;
 
 struct Fixture {
     root: PathBuf,
@@ -71,14 +72,15 @@ impl Fixture {
                 runtime,
                 store,
                 recorder,
-                state: Mutex::new(Generation {
+                state: Arc::new(Mutex::new(Generation {
                     loaded,
                     broker,
                     sessions: HashMap::new(),
                     observers: HashMap::new(),
                     interception: None,
                     last_reload: None,
-                }),
+                    retirement: None,
+                })),
                 reload_gate: tokio::sync::Mutex::new(()),
                 prepared_hook: Mutex::new(None),
                 cleanup_hook: Mutex::new(None),

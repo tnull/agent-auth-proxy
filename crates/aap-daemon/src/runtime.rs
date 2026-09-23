@@ -14,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod observation;
+mod retirement;
 #[cfg(test)]
 mod tests;
 
@@ -81,6 +82,7 @@ struct Generation {
     observers: HashMap<String, observation::Attachment>,
     interception: Option<Arc<crate::interception::StoreInterception>>,
     last_reload: Option<ReloadOutcome>,
+    retirement: Option<retirement::Job>,
 }
 struct Control {
     daemon_epoch: String,
@@ -88,7 +90,7 @@ struct Control {
     runtime: Arc<PrivateDir>,
     store: Arc<SqliteStore>,
     recorder: Recorder,
-    state: Mutex<Generation>,
+    state: Arc<Mutex<Generation>>,
     reload_gate: tokio::sync::Mutex<()>,
     #[cfg(test)]
     prepared_hook: Mutex<Option<ReloadHook>>,
@@ -202,6 +204,30 @@ impl Control {
             .reload_gate
             .try_lock()
             .map_err(|_| ErrorCode::LimitExceeded)?;
+        let previous = {
+            let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            if state.broker.is_closed() {
+                return Err(ErrorCode::SessionInvalid.into());
+            }
+            if state
+                .retirement
+                .as_ref()
+                .is_some_and(retirement::Job::is_active)
+            {
+                return Err(ErrorCode::LimitExceeded.into());
+            }
+            if let Some(job) = &state.retirement {
+                state.last_reload = Some(job.outcome());
+            }
+            state.retirement.take()
+        };
+        if let Some(previous) = previous {
+            let outcome = previous.join().await;
+            self.state
+                .lock()
+                .map_err(|_| ErrorCode::InternalError)?
+                .last_reload = Some(outcome);
+        }
         let directory = self.directory.clone();
         let loaded = tokio::task::spawn_blocking(move || crate::load(&directory))
             .await
@@ -217,62 +243,85 @@ impl Control {
             .transpose()?;
         #[cfg(test)]
         Self::run_hook(&self.prepared_hook)?;
-        let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
-        if state.broker.is_closed() {
-            return Err(ErrorCode::SessionInvalid.into());
-        }
-        if loaded.configuration.configuration_revision
-            <= state.loaded.configuration.configuration_revision
-            || loaded.configuration.store != state.loaded.configuration.store
-            || loaded.configuration.runtime_directory
-                != state.loaded.configuration.runtime_directory
-            || loaded.configuration.observation != state.loaded.configuration.observation
-        {
-            return Err(ErrorCode::RequestInvalid.into());
-        }
-        let revision = loaded.configuration.configuration_revision;
-        let mut outcome = ReloadOutcome {
-            configuration_revision: revision,
-            retirement: RetirementStatus {
-                configuration_revision: state.loaded.configuration.configuration_revision,
-                authority_closed: true,
-                authority_cleanup: AuthorityCleanup::Pending,
-                drain_confirmed: false,
-            },
+        let (waiter, deadline, start) = {
+            let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            if state.broker.is_closed() {
+                return Err(ErrorCode::SessionInvalid.into());
+            }
+            if loaded.configuration.configuration_revision
+                <= state.loaded.configuration.configuration_revision
+                || loaded.configuration.store != state.loaded.configuration.store
+                || loaded.configuration.runtime_directory
+                    != state.loaded.configuration.runtime_directory
+                || loaded.configuration.observation != state.loaded.configuration.observation
+            {
+                return Err(ErrorCode::RequestInvalid.into());
+            }
+            let revision = loaded.configuration.configuration_revision;
+            let outcome = ReloadOutcome {
+                configuration_revision: revision,
+                retirement: RetirementStatus {
+                    configuration_revision: state.loaded.configuration.configuration_revision,
+                    authority_closed: true,
+                    authority_cleanup: AuthorityCleanup::Pending,
+                    attachment_tasks_pending: state.sessions.len() + state.observers.len(),
+                    attachment_cleanup_failed: false,
+                    cleanup_deadline_exceeded: false,
+                    drain_confirmed: false,
+                },
+            };
+            // All fallible preparation precedes this commitment. No notification,
+            // cleanup callback, or suspension can interleave closure and publication.
+            let deadline = Instant::now() + retirement::BUDGET;
+            state.broker.close_admission();
+            for observer in state.observers.values() {
+                observer.close_admission();
+            }
+            let retired = std::mem::replace(&mut state.broker, candidate);
+            let observers = std::mem::take(&mut state.observers);
+            let sessions = std::mem::take(&mut state.sessions);
+            state.loaded = loaded;
+            state.interception = interception;
+            state.last_reload = Some(outcome.clone());
+            let (job, start) = retirement::Job::start(
+                Arc::downgrade(&self.state),
+                outcome,
+                deadline,
+                retired,
+                sessions,
+                observers,
+                #[cfg(test)]
+                self.cleanup_hook.lock().unwrap().take(),
+            );
+            let waiter = job.waiter();
+            state.retirement = Some(job);
+            (waiter, deadline, start)
         };
-        // All fallible preparation precedes this commitment. No notification,
-        // cleanup callback, or suspension can interleave closure and publication.
-        state.broker.close_admission();
-        for observer in state.observers.values() {
-            observer.close_admission();
-        }
-        let retired = std::mem::replace(&mut state.broker, candidate);
-        let observers = std::mem::take(&mut state.observers);
-        let sessions = std::mem::take(&mut state.sessions);
-        state.loaded = loaded;
-        state.interception = interception;
-        state.last_reload = Some(outcome.clone());
-        drop(state);
-
-        let failed = retired.close().is_err();
-        #[cfg(test)]
-        let failed = Self::run_hook(&self.cleanup_hook).is_err() || failed;
-        // Preserve the existing attachment cancellation behavior without
-        // presenting abortion/drop as proof of task or native-resource drain.
-        drop((observers, sessions));
-        outcome.retirement.authority_cleanup = if failed {
-            AuthorityCleanup::Failed
-        } else {
-            AuthorityCleanup::Complete
-        };
-        // No error after commitment may imply that the old generation remains
-        // active. Recover poisoned status storage only to retain that evidence;
-        // ordinary control operations continue to reject the poisoned state.
-        self.state
+        // Transfer work to the retained job before the first suspension point.
+        // Dropping this operator future only drops its observation of cleanup.
+        let _ = start.send(());
+        drop(_exclusive);
+        Ok(waiter.wait(deadline).await)
+    }
+    async fn wait_retirement(&self, deadline: Instant) -> Result<()> {
+        let waiter = self
+            .state
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .last_reload = Some(outcome.clone());
-        Ok(outcome)
+            .map_err(|_| ErrorCode::InternalError)?
+            .retirement
+            .as_ref()
+            .map(retirement::Job::waiter);
+        if let Some(waiter) = waiter {
+            let outcome = waiter.wait(deadline).await;
+            if outcome.retirement.authority_cleanup != AuthorityCleanup::Complete
+                || outcome.retirement.attachment_tasks_pending != 0
+                || outcome.retirement.attachment_cleanup_failed
+                || outcome.retirement.cleanup_deadline_exceeded
+            {
+                return Err(ErrorCode::InternalError.into());
+            }
+        }
+        Ok(())
     }
     async fn dispatch(&self, request: http::Request<Incoming>) -> Result<Response> {
         validate_local_request(&request)?;
@@ -313,6 +362,9 @@ impl Control {
                 let _: Empty = decode(&body)?;
                 let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
                 Self::prune(&mut state);
+                if let Some(job) = &state.retirement {
+                    state.last_reload = Some(job.outcome());
+                }
                 json_response(&serde_json::json!({
                     "daemon_epoch": self.daemon_epoch,
                     "configuration_revision": state.loaded.configuration.configuration_revision,
@@ -422,14 +474,15 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
         runtime: runtime.clone(),
         store: store.clone(),
         recorder: recorder.clone(),
-        state: Mutex::new(Generation {
+        state: Arc::new(Mutex::new(Generation {
             loaded,
             broker,
             sessions: HashMap::new(),
             observers: HashMap::new(),
             interception,
             last_reload: None,
-        }),
+            retirement: None,
+        })),
         reload_gate: tokio::sync::Mutex::new(()),
         #[cfg(test)]
         prepared_hook: Mutex::new(None),
@@ -496,14 +549,16 @@ pub async fn serve(directory: PathBuf, key: SecretBytes) -> Result<()> {
         _ = terminate.recv() => Ok(()), _ = interrupt.recv() => Ok(()),
         stopped = listeners.join_next() => Err(match stopped { Some(Ok((code, _))) => code, _ => ErrorCode::InternalError }.into()),
     };
+    let deadline = Instant::now() + retirement::BUDGET;
     shutdown.cancel();
     let revoked = control.shutdown();
     listeners.abort_all();
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+    let _ = tokio::time::timeout_at(deadline.into(), async {
         while listeners.join_next().await.is_some() {}
     })
     .await;
+    let retired = control.wait_retirement(deadline).await;
     let locked = store.lock().await.map_err(Into::into);
     drop((control_binding, observation_binding, lock));
-    result.and(revoked).and(locked)
+    result.and(revoked).and(retired).and(locked)
 }

@@ -1812,3 +1812,50 @@ Both Rust 1.95.0 and 1.88.0 pass all-target checks, 322 unit tests, nineteen
 ordinary process tests, and the compile-fail doctest. Stable formatting,
 warning-free Clippy, and docs pass. Independent consumers and opt-in confinement
 were not rerun for this correction. Bounded resource drain remains unverified.
+
+## Host-owned asynchronous reload cleanup
+
+Committed reload cleanup now belongs to a retained daemon job rather than the
+operator request future. The publication boundary installs that owner before
+allowing cleanup to start. Broker cleanup runs on a blocking worker; afterward
+the job cancels and joins every retained session and scoped-observer attachment.
+Dropping the operator waiter does not cancel the cleanup or restore authority.
+
+Reload waits at most two seconds from commitment. Its report distinguishes
+authority cleanup, unjoined attachment counts, attachment failure, and an
+exceeded deadline. The deadline flag remains set after late completion. A
+timeout leaves ownership and the single cleanup slot intact; another reload is
+refused before commitment until the retained job and blocking work stop.
+Unconfirmed joins after coordinator failure also keep the slot occupied.
+Shutdown observes this retained work within its remaining listener-wait budget.
+
+Two regression tests hold cleanup at an explicit post-commit barrier. They
+prove a bounded operator wait, prompt cancellation of the operator caller,
+continued cleanup ownership, refusal of another retirement while busy, and
+successful replacement after cleanup actually finishes. Both failed before the
+change, passed afterward, failed again with the previous production reload
+method restored, and passed after restoration. The pre-change rerun retained
+only report-field initializers needed to compile with the new report shape;
+the barriers are test-only and no assertion was weakened.
+
+Two additional conformance tests keep a tracked attachment alive beyond the
+deadline without aborting or dropping it, verify its later join and failure
+reporting, and inject a blocking-worker panic while real session listeners
+still need cancellation and joining. The real-process reload test also checks
+the new operator fields. None of these results establishes universal resource
+drain: `drain_confirmed` remains false.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0:
+326 unit tests, nineteen ordinary process tests, and the compile-fail doctest.
+All nine independent consumer tests pass with each matching daemon build.
+Formatting, warning-free Clippy, and public docs pass on 1.95.0. All six opt-in
+Linux confinement fixtures also pass on each compiler, run serially without
+competing build/test workloads: 361 tests per compiler in total.
+
+The remaining L5/L8/L9 gates include upstream connection drivers, independently
+held response bodies, native store jobs, shared quotas across generations, and
+the complete real-operator-socket disconnect and daemon/embedded matrices.
+Active-generation shutdown cleanup, store locking, and runtime teardown still
+need one aggregate deadline. This change does not close W4/W8 or the separate
+Keychain, offline recovery, and broader confinement gates. No dependency or
+agent-facing wire field was added.
