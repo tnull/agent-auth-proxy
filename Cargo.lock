@@ -34,9 +34,11 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rustix",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

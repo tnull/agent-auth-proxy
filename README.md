@@ -32,8 +32,9 @@ The [TCP endpoint](docs/tcp.md) now supports enrolled, bounded binary streams
 through the daemon with safe observation, explicit half-close, and retained
 terminal status. The credential-free client now uses that endpoint; broader
 adversarial acceptance remains pending. Opt-in [Linux confinement fixtures](docs/confinement.md)
-now exercise provider, MCP website, and TCP clients inside actual namespaces,
-with live bypass canaries, session isolation, and fail-closed checks. The broader
+now exercise provider, MCP website, CONNECT/TLS, remote MCP, and TCP clients
+inside actual namespaces, with live bypass canaries, session isolation, and
+fail-closed checks. The broader
 confinement suite is incomplete.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private

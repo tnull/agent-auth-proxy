@@ -1,7 +1,10 @@
 //! Opt-in OS acceptance test, not part of the portable broker API.
 mod boundary;
 mod canaries;
+mod connect;
+mod connect_website;
 mod launcher;
+mod remote_mcp;
 mod tcp;
 mod website;
 

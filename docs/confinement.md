@@ -2,7 +2,8 @@
 
 The opt-in fixtures run separate credential-free Rust processes inside real
 Linux namespaces, talking to the real daemon for provider requests, MCP website
-authentication, and enrolled TCP streams. Credentials use SQLCipher custody.
+authentication, CONNECT/TLS, remote MCP, and enrolled TCP streams. Credentials
+and the interception CA private key use SQLCipher custody.
 These tests are partial deployment evidence, **not a supported production
 launcher or a claim of complete communication interception**. The full
 [deployment contract](../plan/deployment.md) still has unchecked gates.
@@ -36,8 +37,12 @@ credentials and local services and remove their own private directories.
 
 Run these opt-in cases serially: they deliberately manipulate inheritance of
 synthetic descriptors in the test process. A shared fixture lock also serializes
-the three confinement cases. Do not run them concurrently with unrelated tests
+the confinement cases. Do not run them concurrently with unrelated tests
 using `--include-ignored` in that same process.
+Avoid concurrent build/test workloads while running the confinement suite:
+the declared UID-scoped process ceiling can also count other host work under
+that UID. Resource pressure is a fixture failure, not permission to raise or
+remove the sandbox limits.
 
 ## Exact launch boundary
 
@@ -89,6 +94,9 @@ positive-control service fails the test instead of counting as isolation.
 | --- | --- |
 | Approved provider request | Real private key arrives only at the TLS fixture; the client gets a redacted SSE response; both observed views close completely with the request ID |
 | MCP password manager | Actual stdio MCP children perform search, fake-credential issuance, form/JSON login, private CSRF/cookie use, status, and logout in two isolated sessions; cross-session contexts fail and one logout leaves the other session usable |
+| CONNECT/TLS provider | Only the public CA enters the sandbox; verified TLS permits the redacted provider response. Wrong Host, SNI, CONNECT authority, and unrelated trust root fail without additional origin TCP connections |
+| CONNECT/TLS website | MCP-issued fake credentials support form and JSON login, private CSRF/cookies, and a visible 303 without automatic follow-up. Two contexts stay isolated; cross-session selection and post-logout use fail |
+| Remote MCP | JSON and SSE across actual stdio children and CONNECT share one private upstream context per local session/resource. Two sessions plus a second account remain separate; forged protocol/session headers fail, DELETE confirms cleanup, and uncertain dispatch/status/repetition never resends the lost action |
 | Enrolled TCP | Binary duplex with explicit half-close, exact terminal counts and directional observation, no duplicate reconnect, and session-scoped operation IDs; revoking one session leaves the other usable |
 | Direct networking | Live host-loopback IPv4/IPv6 TCP and UDP canaries remain unreachable from both parent and descendant |
 | Host sockets | Filesystem/abstract Unix canaries, operator, owner-observer, and another session socket are unreachable by their known names |
@@ -99,12 +107,24 @@ positive-control service fails the test instead of counting as isolation.
 | Revocation | A working attachment stops dispatch without direct fallback or new fixture receipts |
 | Daemon death/restart | A separate live attachment stops working after abrupt daemon death and remains unusable after restart; only a newly projected attachment succeeds |
 | Required recording/approval | An overflowing required collector and an absent approval mechanism prevent provider, website, and TCP dispatch without direct fallback; removing only the collector requirement restores access. Website observation follows cursors across the visible rejection gap and verifies both completed views of every successful request |
+| CONNECT/remote failure gates | A tiny collector rejects CONNECT before TLS admission; unavailable approval denies the protected HTTP operation. Remote MCP also fails closed through stdio. Origin TCP/HTTP receipts stay unchanged and recording loss remains visible |
 
 The Rust probe uses the public `aap-client` interface and the credential-free
 `aap-mcp` stdio adapter. Every MCP child repeats the bypass probes before handling
 its tool call; it is a real descendant in the same sandbox, not an in-process
 tool dispatch. The TCP fixture also includes the actual enrolled plaintext peer
 among the direct-connection targets, with separate connection/payload counters.
+CONNECT/remote fixtures include their real HTTPS listener among those targets;
+trusted positive controls connect without sending TLS, then all later TCP
+receipts must correspond to the expected mediated operations. Those direct
+probes are TCP-connect evidence, not a completed HTTPS-specific bypass suite.
+The CONNECT client has only explicit public CA trust and no retry, redirect,
+or direct connector. Agent-side headers, trailers, and bodies are checked for
+private values; exported content is checked after decoding. Successful provider
+and website HTTP flows end in both observed views. Remote tests additionally
+check known stdio request IDs, incomplete endings for uncertain dispatch, and
+correlated cleanup/control work. Full physical TLS/MCP connection observation
+remains a separate unverified gate.
 Neither executable has a credential-store or engine dependency. The reported
 booleans are test diagnostics, not an agent attestation accepted by the daemon.
 The trusted test runner owns the launch policy, live
@@ -119,11 +139,10 @@ Still unverified by these fixtures:
 - Host memory/ptrace and namespace-joining attacks beyond the process/path and
   inherited-handle checks above; native-store descriptors and actual CA-key
   files; adversarial process-tree teardown and aggregate resource exhaustion.
-- CONNECT and remote MCP operations within this sandbox, including their
-  required-observation and approval failure cases. Their existing ordinary
-  process/library tests are separate evidence. Current confined website/TCP
-  tests do not establish every cancellation, midstream-loss, overload, or
-  account/profile variant in their broader acceptance suites.
+- Every cancellation, midstream-loss, overload, account/profile variant, and
+  protocol/physical-connection observation requirement in the broader CONNECT,
+  remote MCP, website, and TCP acceptance suites. The synthetic paths above do
+  not establish live-service compatibility or complete coverage.
 - Malicious attachment substitution through request fields and the remaining
   deployment matrix. Knowing another session's pathname is covered, but is not
   the whole substitution suite.
@@ -133,6 +152,10 @@ The initial provider acceptance test ran with ordinary, unconfined child
 execution and failed at the expected direct TCP reachability assertion before the isolated
 launcher was added. The MCP-website and TCP acceptance tests each failed on
 explicitly unsupported probe actions before those paths were implemented.
+The origin TCP receipt counter first failed its positive-control assertion on
+a zero-returning stub; the CONNECT acceptance then failed on its unsupported
+action before the actual TLS client was added. Website and remote cases extend
+the resulting client's conformance coverage.
 The extended lifecycle/failure checks are conformance evidence, not additional
 regression discoveries. On 2026-09-23 these fixtures passed on Linux
 `6.12.107+deb13-amd64`, Bubblewrap `0.12.0`, and util-linux `2.41.5`. The probe

@@ -11,7 +11,7 @@ const PRIVATE: &[&str] = &[
     "private-site-csrf",
 ];
 
-async fn tool(
+pub(super) async fn tool(
     boundary: &Boundary,
     process: &mut Probe,
     session: usize,
@@ -34,7 +34,7 @@ async fn tool(
     }
     value["tool"].clone()
 }
-fn success(result: Value) -> Value {
+pub(super) fn success(result: Value) -> Value {
     assert_eq!(result["isError"], false, "MCP tool failed");
     result["structuredContent"].clone()
 }

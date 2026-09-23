@@ -69,6 +69,9 @@ pub struct Report {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    Connect {
+        request: super::connect::Request,
+    },
     Mcp {
         name: String,
         arguments: serde_json::Value,

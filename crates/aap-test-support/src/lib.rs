@@ -12,7 +12,10 @@ use std::{
     future::Future,
     net::SocketAddr,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -54,10 +57,17 @@ pub struct Origin {
     pub address: SocketAddr,
     pub certificate: CertificateDer<'static>,
     pub requests: Arc<Mutex<Vec<Captured>>>,
+    accepted: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
 impl Origin {
+    /// Accepted TCP connections, including attempts which never complete TLS.
+    pub fn accepted_connections(&self) -> usize {
+        assert!(!self.task.is_finished(), "fixture listener stopped");
+        self.accepted.load(Ordering::SeqCst)
+    }
+
     pub async fn spawn(reply: Reply) -> Self {
         Self::with_handler(move |_| reply.clone()).await
     }
@@ -84,12 +94,15 @@ impl Origin {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let records = requests.clone();
         let handler = Arc::new(handler);
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let receipts = accepted.clone();
         let task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
             loop {
                 tokio::select! {
                     accepted = listener.accept(), if connections.len() < 64 => {
                         let Ok((socket, _)) = accepted else { break; };
+                        receipts.fetch_add(1, Ordering::SeqCst);
                         let (acceptor, records, handler) = (acceptor.clone(), records.clone(), handler.clone());
                         connections.spawn(async move {
                             let Ok(stream) = acceptor.accept(socket).await else { return; };
@@ -118,6 +131,7 @@ impl Origin {
             address,
             certificate,
             requests,
+            accepted,
             task,
         }
     }

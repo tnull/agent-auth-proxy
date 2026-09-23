@@ -1,6 +1,8 @@
 #[cfg(target_os = "linux")]
 mod actions;
 #[cfg(target_os = "linux")]
+mod connect;
+#[cfg(target_os = "linux")]
 mod probes;
 #[cfg(target_os = "linux")]
 mod protocol;

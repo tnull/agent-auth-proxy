@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufR
 pub async fn run(action: Action, job: Job) -> ActionResult {
     let result = tokio::time::timeout(Duration::from_secs(5), async {
         match action {
+            Action::Connect { request } => super::connect::run(job.session, request).await,
             Action::Mcp { name, arguments } => mcp(job, name, arguments).await,
             Action::Stream { open, send } => super::stream::run(job.session, open, send).await,
         }

@@ -16,17 +16,17 @@ fn tools() -> Vec<Tool> {
         arguments: BTreeMap::from([("text".into(), Argument::Text { max_length: 1024 })]),
     }]
 }
-fn initialize() -> Value {
+pub(super) fn initialize() -> Value {
     json!({"jsonrpc":"2.0","id":"agent-init","method":"initialize","params":{
         "protocolVersion":VERSION,"capabilities":{"sampling":{}},"clientInfo":{"name":"fixture","version":"1"}}})
 }
-fn initialized() -> Value {
+pub(super) fn initialized() -> Value {
     json!({"jsonrpc":"2.0","method":"notifications/initialized"})
 }
-fn call(text: &str) -> Value {
+pub(super) fn call(text: &str) -> Value {
     json!({"jsonrpc":"2.0","id":"agent-call","method":"tools/call","params":{"name":"echo","arguments":{"text":text}}})
 }
-fn input(fixture: &Fixture, resource: &str, message: Value) -> ExecuteRequest {
+pub(super) fn input(fixture: &Fixture, resource: &str, message: Value) -> ExecuteRequest {
     ExecuteRequest {
         request_id: aap_types::ids::random_id(16).unwrap(),
         resource: resource.into(),
@@ -44,7 +44,7 @@ fn delete(fixture: &Fixture, resource: &str) -> ExecuteRequest {
     input.body_base64.clear();
     input
 }
-fn safe(bytes: &[u8]) {
+pub(super) fn safe(bytes: &[u8]) {
     let text = String::from_utf8_lossy(bytes);
     for value in [
         "synthetic-daemon-key",
@@ -55,7 +55,7 @@ fn safe(bytes: &[u8]) {
         assert!(!text.contains(value), "private remote state escaped");
     }
 }
-fn decoded(bytes: &[u8]) -> Value {
+pub(super) fn decoded(bytes: &[u8]) -> Value {
     safe(bytes);
     if bytes.starts_with(b"data:") {
         let text = std::str::from_utf8(bytes).unwrap();
@@ -104,7 +104,7 @@ async fn handshake(fixture: &Fixture, client: &DaemonSessionClient, resource: &s
             .is_empty()
     );
 }
-async fn fixture(sse: bool) -> Fixture {
+pub(super) async fn fixture(sse: bool) -> Fixture {
     let mut fixture = Fixture::new().await;
     let sessions = Mutex::new(HashMap::<String, (&'static str, bool)>::new());
     let next = AtomicUsize::new(0);

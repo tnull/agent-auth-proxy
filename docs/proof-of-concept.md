@@ -1277,3 +1277,70 @@ The [confinement guide](confinement.md) records the updated evidence and limits.
 CONNECT, remote MCP, broader protocol-specific and alternate-family bypasses,
 process-escape/teardown coverage, and the remaining W0-W9 acceptance requirements
 are still incomplete. These tests do not complete the full proof of concept.
+
+## Confined CONNECT and remote MCP paths
+
+Three more opt-in fixtures extend the Linux proof to inspected provider and
+website requests and to remote MCP. The development probe has a bounded
+CONNECT/HTTP client using only the projected Unix socket and a supplied public
+CA certificate. Its Rustls dependencies are Linux development-only, reuse
+already selected packages, and do not alter the normal client's dependency
+closure. There is no ambient trust, private-key input, redirect, retry, or
+direct-network fallback in that action.
+
+The synthetic HTTPS origin now counts TCP accepts separately from HTTP
+requests. Unconfined parent/descendant controls must reach that exact listener;
+all subsequent accepts must correspond to expected mediated operations. This
+detects connections which never finish TLS, not just unexpected HTTP requests.
+It does not establish the separate DNS/HTTPS/QUIC protocol-level bypass gates.
+
+Provider CONNECT succeeds with a sanitized stream while wrong CONNECT
+authority, Host, SNI, or trust root causes no additional upstream connection.
+A one-event required collector rejects the second admission check before the
+TLS upgrade; an unavailable approval provider rejects the protected operation.
+Removing the collector restores access without changing the sandbox boundary.
+Observation includes TLS admission and one complete ending per HTTP view.
+
+The website fixture covers form and JSON submission, private CSRF/cookies,
+MCP-issued fake credentials, and a 303 without automatic authenticated follow-up.
+Two confined sessions cannot select each other's contexts; logout of one leaves
+the other usable. Headers, trailers, response bodies, and decoded observation
+content exclude the synthetic private values. Each successful HTTP operation
+has exactly one completion in each observed view.
+
+The remote fixture covers JSON and SSE using actual stdio tool children and
+CONNECT interchangeably within each local session. Two sessions for one account
+and a third for another create three distinct native upstream contexts. Forged
+session/protocol headers fail; confirmed DELETE invalidates only its context.
+Required-recording and approval failures deny both ingress paths. A server
+which receives a call then disconnects produces an uncertain outcome, an
+incomplete ending in each view, and no repeat dispatch on status or duplicate
+submission. Cleanup/control subrequests retain parent correlation.
+
+The origin counter first failed against a zero-returning stub; after its
+implementation, the provider test failed against an unsupported CONNECT action.
+The actual client then passed that test. Website, remote, and additional failure
+cases are conformance coverage, not claims of newly discovered daemon bugs.
+Draft expectations were corrected to the existing typed errors after inspecting
+the owning code: cross-session website handles are policy denials, while remote
+calls without an initialized/live context are request-state conflicts. The
+no-dispatch and private-state assertions were retained.
+
+One combined run with concurrent host compilation ended early in the existing
+MCP website probe. Its precise cause was not captured; host resource pressure
+is a possibility, not an established diagnosis. A subsequent standalone serial
+run passed all six confinement tests without changing their limits. The guide
+now advises keeping build workloads separate from this UID-limited fixture.
+
+All 276 unit tests, nineteen ordinary daemon process tests, and the compile-fail
+doctest pass on Rust 1.95.0 and 1.88.0. All six confinement cases pass when
+invoked explicitly on both toolchains; the three new cases were also rerun on
+1.95.0 after strengthening their per-view ending assertions. All-target checks
+pass on both toolchains. Stable formatting, warning-free Clippy, warning-free
+documentation, and changed-document relative-link checks pass. Normal/build
+dependency inspection confirms the client still has no engine, store, MCP, or
+Rustls dependency; the added TLS packages are development-only.
+
+Full protocol/physical-connection observation, the remaining confinement
+matrix, operational recovery, independent embedding demonstrations, and native
+Keychain delivery remain open; W0-W9 are not marked complete.
