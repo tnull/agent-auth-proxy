@@ -1,6 +1,7 @@
 //! Verified network execution, without credential lookup or independent policy.
 
 pub mod interception;
+pub mod tcp;
 
 use aap_types::{BoxFuture, Error, ErrorCode, Response, Result};
 use bytes::Bytes;

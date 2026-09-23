@@ -26,4 +26,25 @@ The interception module additionally validates a narrow self-signed root profile
 and consumes an explicitly supplied PKCS#8 key to issue a short-lived identity
 for an already admitted CONNECT authority. Two tests cover actual scoped-trust,
 SNI/ALPN/IP handshakes and invalid, expired, non-CA, or mismatched key material.
-It owns neither store lookup nor admission. The constrained TCP relay is pending.
+It owns neither store lookup nor admission.
+
+## Admitted TCP connector
+
+The `tcp` module offers a separate trusted `TcpConnector` seam and
+`SystemTcpConnector` for one already admitted `TcpEndpoint`. Endpoint construction
+checks canonical authority/port and literal-IP consistency. The connector uses
+only the supplied socket address: no DNS lookup, TLS, credential resolution,
+proxy negotiation, implicit framing, retry, failover, or connection reuse.
+
+The caller supplies an absolute deadline at most ten seconds away. Pre-cancelled
+or expired work never polls a connection attempt; cancellation, timeout, or
+failure once an attempt can have started is conservatively uncertain. A late
+successful socket is discarded if cancellation or expiry won. Dropping a pending
+future drops its attempt rather than leaving a background connection task.
+
+The returned owned duplex I/O belongs to the trusted engine, not the agent.
+After connection, that owner must enforce authorization, cancellation, relay
+buffers/deadlines, observation, framing, and terminal write counters. Four tests
+cover strict endpoints, real binary traffic with both half-close orders, and
+deterministic attempt cancellation/expiry/failure/drop. They do not yet establish
+an operational agent TCP relay; engine and local adapter integration is pending.

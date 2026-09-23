@@ -894,3 +894,31 @@ pass on Rust 1.95.0 and 1.88.0, with all-target checks on both and warning-free
 stable Clippy/formatting. No dependency was added. Connector, stream execution,
 relay limits/approval/observation, HTTP upgrade, and client integration remain
 pending; configuration acceptance alone does not establish TCP support.
+
+## Admitted TCP connector
+
+`aap-transport::tcp` now provides a trusted connector interface and a concrete
+single-attempt connector over an admitted socket address. Canonical endpoint,
+port, literal-IP, and scope checks precede connection. No hostname lookup, TLS,
+authentication, local stream framing, retry, failover, or connection task is
+hidden inside it. A ten-second maximum absolute establishment deadline and
+cancellation bound the attempt; late successful sockets are dropped, and
+abnormal attempted connections retain uncertainty even without payload bytes.
+The returned owned I/O remains inside the trusted host.
+
+Four new tests failed on their initial stubs and now pass. A real TCP fixture
+uses an unresolvable enrolled name with the admitted loopback address, preserves
+binary bytes, and exercises both half-close orders, including a reply only
+after the client ends its send direction. Deterministic paused-clock tests
+prove pre-cancelled/expired attempts are not polled, started attempts are not
+retried or detached, late success is discarded, and native diagnostics remain
+private. Tokio's existing test-time support is enabled only as a development
+feature; no runtime dependency was added.
+
+All 204 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target checks pass on both; stable formatting,
+warning-free Clippy, and warning-free workspace documentation pass. Documentation
+checking found and corrected an IPv6 example mistakenly parsed as a Rustdoc link.
+The engine-owned duplex operation, shared approval/quotas/observation, local
+upgrade, agent client, and confinement acceptance remain unimplemented TCP
+integration gates. These connector tests do not complete W7.

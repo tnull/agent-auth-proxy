@@ -1,6 +1,6 @@
 # Destination-bound TCP relay
 
-Status: W7 contract. Enrollment validation and pure framing are implemented;
+Status: W7 contract. Enrollment, pure framing, and a single-attempt connector are implemented;
 the operational relay and its coverage remain pending. Keep the existing
 project and crate names. This extends the [architecture](architecture.md) and
 [common operation contract](protocol-common.md); it introduces neither an

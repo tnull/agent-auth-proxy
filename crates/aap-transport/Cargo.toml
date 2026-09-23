@@ -22,7 +22,7 @@ tokio = { workspace = true, features = ["rt", "net", "sync", "time", "macros"] }
 
 [dev-dependencies]
 aap-test-support.workspace = true
-tokio = { workspace = true, features = ["io-util"] }
+tokio = { workspace = true, features = ["io-util", "test-util"] }
 
 [lints]
 workspace = true
