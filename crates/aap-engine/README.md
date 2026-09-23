@@ -67,9 +67,18 @@ fully withheld chunk. These TCP paths make no secret-store calls. Each relay
 uses at most 16 KiB of core buffering per direction, leaving space in its
 128 KiB reservation for the planned framing buffers and redaction scratch.
 
+The session's `AgentService::open_stream` now exposes the same ownership path
+through runtime-neutral `stream::service` contracts. Its pending handle does no
+connection work until explicitly consumed; duplicates return status, never a
+replacement handle. The connected handle accepts a trusted `ApplicationIo`
+adapter without exposing the upstream socket. Reads, writes, and directional
+end callbacks remain distinct from the final relay result. The engine checks
+callback byte counts and preserves fixed local framing failures; arbitrary
+native errors remain private. No callback may reenter the same broker.
+
 This trusted native-I/O entry point is not an agent TCP endpoint. HTTP upgrade,
-credential-free service/client binding, framed send-end/attachment-loss behavior,
-and actual daemon/confinement integration remain pending. A future wire adapter
+agent client support, framed send-end/attachment-loss behavior, and actual
+daemon/confinement integration remain pending. A future wire adapter
 must finish OPENED before forwarding, map explicit SEND_END to application EOF,
 reject raw attachment EOF, and keep bounded final-control delivery separate.
 

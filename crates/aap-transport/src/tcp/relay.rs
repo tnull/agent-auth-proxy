@@ -225,7 +225,8 @@ impl Duplex {
                 .poll_write(cx, &state.buffer[state.written..state.filled]);
             match result {
                 Poll::Pending => Ok(false),
-                Poll::Ready(Err(_)) | Poll::Ready(Ok(0)) => Err(io_cause(1 - index)),
+                Poll::Ready(Err(error)) => Err(io_error(1 - index, &error)),
+                Poll::Ready(Ok(0)) => Err(io_cause(1 - index)),
                 Poll::Ready(Ok(count)) => {
                     let state = &mut self.directions[index];
                     if count > state.filled - state.written {
@@ -252,7 +253,7 @@ impl Duplex {
         } else if self.directions[index].read_end {
             match Pin::new(&mut self.sockets.as_mut().unwrap()[1 - index]).poll_shutdown(cx) {
                 Poll::Pending => Ok(false),
-                Poll::Ready(Err(_)) => Err(io_cause(1 - index)),
+                Poll::Ready(Err(error)) => Err(io_error(1 - index, &error)),
                 Poll::Ready(Ok(())) => {
                     self.check()?;
                     self.directions[index].write_end = true;
@@ -274,7 +275,7 @@ impl Duplex {
             let mut bytes = ReadBuf::new(&mut state.buffer[..room]);
             match Pin::new(&mut self.sockets.as_mut().unwrap()[index]).poll_read(cx, &mut bytes) {
                 Poll::Pending => Ok(false),
-                Poll::Ready(Err(_)) => Err(io_cause(index)),
+                Poll::Ready(Err(error)) => Err(io_error(index, &error)),
                 Poll::Ready(Ok(())) => {
                     let count = bytes.filled().len();
                     self.check()?;
@@ -327,6 +328,18 @@ impl Duplex {
     }
 }
 
+fn io_error(index: usize, error: &std::io::Error) -> Cause {
+    // Only the trusted local adapter may classify framing failures. Remote
+    // errors and arbitrary native diagnostics never become protocol controls.
+    if index == 0
+        && let Some(error) = error
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<stream::service::AttachmentError>())
+    {
+        return error.cause();
+    }
+    io_cause(index)
+}
 fn io_cause(index: usize) -> Cause {
     if index == 0 {
         Cause::AttachmentLost

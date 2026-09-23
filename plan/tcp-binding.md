@@ -1,7 +1,8 @@
 # Local TCP stream binding, version 1
 
-Status: W7 wire contract. Pure DTO/framing validation is implemented; the
-session upgrade, relay, and client integration remain pending. This binds
+Status: W7 wire contract. Pure DTO/framing validation, trusted engine relay,
+and the runtime-neutral service seam are implemented. Session upgrade and
+agent client integration remain pending. This binds
 [`stream.open`](tcp.md) to the existing session attachment. It changes neither
 upstream authentication nor the credential-store interface. Project names and
 the provisional protocol token can be renamed together before release.
@@ -247,10 +248,12 @@ Keep credential-free frame/DTO validation and logical stream outcomes in
 and observation admission; `aap-transport` owns admitted dialing and duplex I/O.
 No new crate or protocol dependency is needed for this binding.
 
-Embedded callers use equivalent bounded send/receive/end operations without
-serializing HTTP locally. Their receive API distinguishes directional end from
-terminal outcome, and their lifecycle obeys the same single-consumer, no-resume,
-drop-cancels contract. Concrete Rust signatures remain an implementation task.
+Embedded callers use bounded application read/write/end callbacks without
+serializing HTTP locally. The implemented `stream::service` seam separates
+admission, connection, and forwarding through owned handles; directional end
+is distinct from the relay future's terminal outcome. It obeys the same
+single-consumer, no-resume, drop-cancels contract. A runtime-neutral interface
+does not remove the concrete engine's requirement for its host's Tokio runtime.
 
 Before advertising W7 TCP support, demonstrate all [relay acceptance
 checks](tcp.md#crate-ownership-and-acceptance), plus:

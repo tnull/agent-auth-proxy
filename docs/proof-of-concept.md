@@ -1038,3 +1038,39 @@ feature was added. The local HTTP upgrade, credential-free service/client API,
 framed send-end/attachment-loss behavior, reserved control capacity, and real
 daemon/confinement fixtures remain pending. Trusted native-I/O forwarding does
 not complete W7 or establish an operational agent TCP endpoint.
+
+## Runtime-neutral stream service seam
+
+`AgentService::open_stream` now exposes the engine's existing TCP admission
+through credential-free owned handles. It returns either retained status or
+the sole pending attachment; approval/DNS/dialing wait for explicit connection
+work. A connection reports safe opening metadata or its committed terminal
+result. Adapter delivery failure remains a separate error, never an invented
+terminal outcome, reattachment, or automatic retry.
+
+The connected handle immediately owns a runtime-neutral application adapter
+when forwarding is requested, even before the returned future polls. Bounded
+read/write/directional-end callbacks are distinct from terminal completion.
+Reported byte counts are checked before buffer advancement/accounting. Fixed
+local adapter failures preserve invalid-frame, limit, loss, and internal causes;
+native diagnostics and upstream errors cannot masquerade as those controls.
+Public contracts gained no runtime, socket, custody, or protocol dependency.
+Concrete engine use still requires its host's Tokio runtime.
+
+Five engine tests failed with the unsupported service stub before wiring and
+now pass. They cover object-safe admission, duplicate/conflicting identity,
+abandonment before connection, missing approval, no reconnect, real binary
+traffic and directional end, immediate ownership before polling, all fixed
+adapter failure classes, and oversized callback counts. The failure-class test
+also observed invalid framing being reduced to attachment loss before typed
+propagation was added. A sixth conformance test checks that upstream/native
+diagnostics retain fixed private causes. All TCP fixtures observe zero calls
+to every secret-store method.
+
+All 246 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target checks pass on both; stable formatting,
+warning-free Clippy, and warning-free documentation pass. No dependencies or
+Cargo features changed. HTTP upgrade, its framed application adapter, actual
+client/daemon TCP support, reserved status/cancel capacity, and confinement
+remain separate incomplete gates. Other AgentService adapters still explicitly
+reject stream opening by default rather than falsely claiming wire support.

@@ -373,6 +373,19 @@ impl AgentService for Session {
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>> {
         Box::pin(self.execute_inner(request))
     }
+    fn open_stream(
+        &self,
+        request: stream::Open,
+    ) -> BoxFuture<'_, Result<stream::service::Admission>> {
+        Box::pin(async move {
+            Ok(match self.admit_tcp(request)? {
+                tcp::TcpAdmission::Existing(status) => stream::service::Admission::Existing(status),
+                tcp::TcpAdmission::New(pending) => {
+                    stream::service::Admission::New(Box::new(pending))
+                }
+            })
+        })
+    }
     fn forward(
         &self,
         request: aap_types::proxy::ForwardRequest,

@@ -23,5 +23,20 @@ Arbitrary application bytes have no implicit debug formatter.
 These pure contracts do not dial or grant access. Their owner must reserve
 aggregate buffers, bound retained frames, enforce deadlines and cancellation,
 and track actual accepted socket writes separately from admitted frame bytes.
-Reserve that memory before invoking a decoder. The planned HTTP upgrade,
-engine relay, and client remain separate integration work.
+Reserve that memory before invoking a decoder. The engine now provides trusted
+native-I/O relay integration; HTTP upgrade and client support remain pending.
+
+`AgentService::open_stream` and `stream::service` separate admission from
+connection and forwarding through owned, non-cloneable handles. The engine
+implements this seam; other adapters explicitly reject it by default. Admission
+reports an existing operation or its sole pending attachment. Connection then
+reports safe opening metadata or a terminal result. Adapter delivery failure
+is a separate error, never invented success or a retry instruction.
+
+The runtime-neutral `ApplicationIo` callbacks provide bounded read/write and
+explicit directional end. They expose no upstream socket, secret store, or
+authority override. The terminal outcome comes separately from the relay
+future. Transfer takes ownership immediately; dropping handles/futures cancels
+nonterminal work. Trusted implementations must honor wakeups, actual-prefix
+write accounting, bounded framing memory, and the no-hidden-queue/no-reentrancy
+contract. Fixed attachment errors cannot claim orderly success or approval.

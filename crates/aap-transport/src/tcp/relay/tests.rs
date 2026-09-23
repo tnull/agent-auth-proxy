@@ -47,6 +47,24 @@ fn recorder() -> Recorder {
     Recorder(Arc::new(Mutex::new(Recording::default())))
 }
 
+#[test]
+fn only_fixed_local_attachment_errors_classify_terminal_causes() {
+    use stream::service::AttachmentError;
+    for failure in [
+        AttachmentError::InvalidFrame,
+        AttachmentError::LimitExceeded,
+        AttachmentError::AttachmentLost,
+        AttachmentError::InternalError,
+    ] {
+        let error = std::io::Error::other(failure);
+        assert_eq!(io_error(0, &error), failure.cause());
+        assert_eq!(io_error(1, &error), Cause::UpstreamUnavailable);
+    }
+    let error = std::io::Error::other("private native diagnostic");
+    assert_eq!(io_error(0, &error), Cause::AttachmentLost);
+    assert_eq!(io_error(1, &error), Cause::UpstreamUnavailable);
+}
+
 async fn pair() -> (tokio::net::TcpStream, tokio::net::TcpStream) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())

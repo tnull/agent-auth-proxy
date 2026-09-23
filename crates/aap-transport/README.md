@@ -75,6 +75,12 @@ does not flush remaining payload. Low-level I/O errors become fixed causes,
 not peer-provided diagnostics. A one-byte EOF probe at a byte ceiling is never
 forwarded if it contains excess data.
 
+A trusted local adapter may wrap a fixed `stream::service::AttachmentError`
+inside its I/O error to preserve invalid-frame/limit/loss/internal causes.
+Only that concrete local classification is recognized. Upstream errors and
+arbitrary native diagnostics retain the conservative fixed transport cause;
+they cannot impersonate local framing failures or successful completion.
+
 Eleven tests include real binary TCP traffic and both half-close orders,
 required-gate rejection, cancellation before writes, partial-write accounting,
 exact/exceeded directional limits, real driver wakeups, idle/lifetime/stall

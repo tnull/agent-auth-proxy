@@ -11,6 +11,7 @@ use aap_types::stream;
 mod connect;
 mod observation;
 mod relay;
+mod service;
 mod state;
 pub use relay::TcpRelay;
 pub(super) use state::Operation;

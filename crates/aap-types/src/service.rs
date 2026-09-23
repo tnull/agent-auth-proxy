@@ -9,6 +9,14 @@ pub type Response = http::Response<Body>;
 /// Implementations must enforce shared session quotas across every frontend.
 pub trait AgentService: Send + Sync {
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>>;
+    /// Register one destination-bound stream attachment without starting its
+    /// upstream connection. Unsupported adapters fail closed by default.
+    fn open_stream(
+        &self,
+        _request: crate::stream::Open,
+    ) -> BoxFuture<'_, Result<crate::stream::service::Admission>> {
+        Box::pin(async { Err(ErrorCode::AuthProfileUnsupported.into()) })
+    }
     /// Trusted adapter seam: resolve a unique enrolled profile and use the same
     /// authorized pipeline. Not exposed as a separate local JSON/MCP operation.
     fn forward(&self, _request: crate::proxy::ForwardRequest) -> BoxFuture<'_, Result<Response>> {

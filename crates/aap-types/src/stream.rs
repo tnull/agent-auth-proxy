@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 mod decoder;
 mod frame;
 mod sequence;
+pub mod service;
 pub use decoder::Decoder;
 pub use sequence::Sequence;
 
