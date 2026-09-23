@@ -167,6 +167,7 @@ pub fn run(job: &Job, inherited: &BTreeSet<i32>) -> io::Result<Report> {
         gid_map: std::fs::read_to_string("/proc/self/gid_map")?,
         limits,
         request: None,
+        action: None,
         descendant: None,
     })
 }

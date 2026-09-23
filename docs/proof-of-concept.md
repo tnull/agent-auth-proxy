@@ -1223,3 +1223,57 @@ production launcher. Confined website/CONNECT/MCP/TCP paths, protocol-specific
 and alternate-family bypasses, stronger process-escape/teardown coverage, and
 the rest of the deployment matrix remain required. W0-W9 are not marked
 complete by this provider-only demonstration.
+
+## Confined MCP website and TCP paths
+
+Two further opt-in process tests extend the same Linux boundary to the actual
+password-manager and owned TCP interfaces. They do not add custody or sandbox
+management to agent-facing libraries. The development probe uses the public
+credential-free MCP adapter in a real child process, including initialization
+and stdio tool calls. Every tool child repeats the same bypass probes before
+handling its call. Only the one projected session attachment is available.
+
+The website test completes both form and JSON login through MCP search, fake
+credential issuance, private pre-login/auth cookies and profiled CSRF, protected
+requests, status, and logout. Two confined sessions cannot use each other's
+contexts, and logging out one does not revoke the other. The controlled HTTPS
+origin verifies actual credentials; agent responses and decoded observation
+content contain neither those values nor the private cookies/CSRF values.
+Both recorded views close completely for each successful request.
+
+The TCP test uses the public owned client for binary duplex, explicit half-close,
+exact terminal counters, and directional observation from two confined sessions.
+Duplicate opening returns retained status without reconnecting; an identical
+public request ID on the other attachment identifies that session's own operation.
+Revoking one session does not stop the other. The actual plaintext peer is also
+a positive-control direct-network target, with separate connection and payload
+counters: no direct sandbox connection reaches it.
+
+Both new paths reject protected work when required observation cannot accept
+it or approval is unavailable. Removing only the deliberately tiny collector
+restores the affected session's path. The website test checks the visible
+observation gap and resumes its cursor to verify later successful flows. Its
+first draft incorrectly inspected only the first page after the intentional
+gap; the fixture now consumes bounded pages instead of weakening the required
+completion assertions.
+
+Each new action path was first tested against a compiling unsupported probe
+stub and failed before implementation. The additional lifecycle/failure cases
+are conformance evidence, not newly discovered production regressions. The
+three opt-in confinement tests are serialized because their positive controls
+deliberately change inheritance of synthetic descriptors in the test process.
+Their documented command runs separately from the ordinary test suite; skips
+still do not count as confinement passes.
+
+All 276 unit tests, nineteen ordinary process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. The three confinement tests pass when invoked
+explicitly on both toolchains. All-target checks pass on both; stable formatting,
+warning-free Clippy, and warning-free documentation pass. The example adds only
+the existing `aap-mcp` crate and scoped Tokio features as Linux development
+dependencies. The normal client dependency graph remains unchanged and contains
+no engine/store code.
+
+The [confinement guide](confinement.md) records the updated evidence and limits.
+CONNECT, remote MCP, broader protocol-specific and alternate-family bypasses,
+process-escape/teardown coverage, and the remaining W0-W9 acceptance requirements
+are still incomplete. These tests do not complete the full proof of concept.

@@ -3,8 +3,9 @@
 The daemon now implements the server side of the
 [version 1 stream binding](../plan/tcp-binding.md). This is a separately enrolled,
 credential-free byte relay, not automatic authentication for arbitrary TCP.
-The credential-free client now uses that endpoint. Broader adversarial acceptance
-and actual confinement demonstration remain pending; this does not complete W7.
+The credential-free client now uses that endpoint, including an initial
+[actual-sandbox demonstration](confinement.md). Broader adversarial and
+confinement acceptance remain pending; this does not complete W7.
 
 ## Enrollment and opening
 
@@ -111,6 +112,13 @@ also cover both half-close orders, pending approval loss, forbidden input,
 cancelled blocked OPENED, partial frame writes, frame/byte ceilings, payload
 release, terminal timeout, and full work-slot admission with usable controls.
 These are controlled fixtures, not proof of a sandbox network boundary.
+
+The separate opt-in Linux confinement fixture adds two isolated clients,
+binary half-close and exact directional observation, duplicate no-reconnect,
+session-scoped IDs, revocation independence, and fail-closed required recording
+and approval. Its live positive controls include the actual enrolled plaintext
+peer, which receives no direct sandbox connections. These checks do not replace
+the broader allocation, concurrency, loss-injection, and deployment matrices.
 
 Trusted hosts may reuse `aap_http::stream::serve_upgraded` after their own
 validated admission and completed HTTP upgrade. It consumes the existing

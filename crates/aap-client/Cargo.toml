@@ -23,6 +23,8 @@ tokio = { workspace = true, features = ["macros", "io-util", "sync", "test-util"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix.workspace = true
+aap-mcp.workspace = true
+tokio = { workspace = true, features = ["process", "io-std"] }
 
 [[example]]
 name = "confinement-agent"

@@ -92,6 +92,13 @@ logins, two isolated sessions using the same enrolled account, duplicate-operati
 behavior, logout, and an independent redacted-observation reader. These use
 synthetic credentials only. They do not prove sandbox confinement.
 
+The separate opt-in [Linux confinement suite](confinement.md) now repeats form
+and JSON password-manager flows through actual MCP subprocesses in two isolated
+sandboxes. Both the agent and tool children run bypass probes. It covers fake
+credentials, private cookies/CSRF, cross-session denial, logout independence,
+required-recording failure with visible observation gaps, and unavailable
+approval. Remote MCP and CONNECT have not yet been run inside that sandbox.
+
 Run `cargo test -p aap-daemon --test process remote_mcp` for real remote MCP
 exchanges using SQLCipher, separate daemon/bridge processes, and independent
 downstream/upstream TLS through CONNECT. The fixture verifies JSON/SSE, two
@@ -134,6 +141,6 @@ handshake nor a new local bridge makes retrying a business action safe.
 
 The reusable adapter also accepts an in-process `AgentService`; it imports no
 engine/store code. Broader remote MCP concurrency/overload acceptance, local MCP
-over HTTP, complete MCP-wire observation, real sandbox enforcement, and external
+over HTTP, complete MCP-wire observation, the full remote-MCP confinement matrix, and external
 embedding conformance remain separate delivery gates. The bounded request tool is not
 the model streaming endpoint and does not buffer an unlimited model stream.

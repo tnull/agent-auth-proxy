@@ -190,8 +190,9 @@ add JSON/SSE, native session/account isolation, stdio bridging, CONNECT,
 reviewed tool admission, private control children, cancellation, DELETE, and
 uncertain-delivery/no-replay evidence. These ordinary fixture processes do not
 establish a sandbox boundary; a separate opt-in [Linux fixture](confinement.md)
-now exercises the provider path with actual filesystem/network/process isolation.
-It does not yet establish confined MCP or CONNECT coverage.
+now exercises provider, MCP website, and TCP paths with actual
+filesystem/network/process isolation. Confined remote MCP and CONNECT coverage
+remain pending.
 The tunneled website test also runs the enrolled 303 variant: no implicit
 follow-up is sent, and its separately submitted GET has no credential body.
 
@@ -203,5 +204,7 @@ The TCP process fixture uses a separate enrolled local peer and raw session
 upgrade. It verifies binary-only upstream delivery, explicit half-close,
 terminal/status agreement, duplicate-open no-reconnect behavior, malformed
 header refusal, and operator-route separation. A second fixture exercises the
-credential-free TCP client, cancellation, and drop. Confined TCP acceptance
-remains pending; see [tcp.md](tcp.md).
+credential-free TCP client, cancellation, and drop. The opt-in confined TCP
+fixture adds binary forwarding, duplicate/session isolation, revocation,
+required observation, and unavailable approval, alongside direct-bypass probes.
+Broader TCP acceptance remains pending; see [tcp.md](tcp.md).

@@ -1,11 +1,23 @@
 #[cfg(target_os = "linux")]
+mod actions;
+#[cfg(target_os = "linux")]
 mod probes;
 #[cfg(target_os = "linux")]
 mod protocol;
+#[cfg(target_os = "linux")]
+mod stream;
 
 #[cfg(target_os = "linux")]
 fn main() {
-    if run().is_err() {
+    let result = if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--mcp-bridge")
+    {
+        actions::bridge()
+    } else {
+        run()
+    };
+    if result.is_err() {
         eprintln!("confinement probe failed");
         std::process::exit(1);
     }
@@ -31,7 +43,7 @@ fn run() -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    for _ in 0..8 {
+    for _ in 0..32 {
         let Some(mut job) = protocol::read::<Job>(&mut std::io::stdin().lock())? else {
             return Ok(());
         };
@@ -41,6 +53,7 @@ fn run() -> std::io::Result<()> {
             let mut descendant = job.clone();
             descendant.descendant = false;
             descendant.request = None;
+            descendant.action = None;
             let mut child = Command::new(std::env::current_exe()?)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -56,7 +69,7 @@ fn run() -> std::io::Result<()> {
         }
         if let Some(request) = job.request.take() {
             let id = request.request_id.clone();
-            let client = aap_client::DaemonSessionClient::new(job.session);
+            let client = aap_client::DaemonSessionClient::new(job.session.clone());
             report.request = Some(runtime.block_on(async {
                 let response = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
@@ -100,6 +113,9 @@ fn run() -> std::io::Result<()> {
                     },
                 }
             }));
+        }
+        if let Some(action) = job.action.take() {
+            report.action = Some(runtime.block_on(actions::run(action, job)));
         }
         protocol::write(&mut std::io::stdout().lock(), &report)?;
         std::io::stdout().flush()?;

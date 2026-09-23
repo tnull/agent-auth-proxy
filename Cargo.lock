@@ -24,6 +24,7 @@ dependencies = [
 name = "aap-client"
 version = "0.1.0"
 dependencies = [
+ "aap-mcp",
  "aap-types",
  "bytes",
  "http",

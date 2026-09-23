@@ -1,19 +1,20 @@
-# Linux confinement fixture
+# Linux confinement fixtures
 
-The opt-in provider fixture runs a separate credential-free Rust process inside
-real Linux namespaces, talking to the real daemon and SQLCipher-backed provider
-profile. It is partial deployment evidence, **not a supported production
+The opt-in fixtures run separate credential-free Rust processes inside real
+Linux namespaces, talking to the real daemon for provider requests, MCP website
+authentication, and enrolled TCP streams. Credentials use SQLCipher custody.
+These tests are partial deployment evidence, **not a supported production
 launcher or a claim of complete communication interception**. The full
 [deployment contract](../plan/deployment.md) still has unchecked gates.
 
-## Running the fixture
+## Running the fixtures
 
 The host must provide unprivileged user/network/mount/PID/IPC/UTS namespaces,
 IPv4 and IPv6 loopback, `/proc`, and these trusted dynamically linked helpers:
 `/usr/bin/bwrap` (tested at 0.12.0), `prlimit`, `unshare`, `true`, and `ldd`.
 Bubblewrap must support `--disable-userns`, `--assert-userns-disabled`, and sized
 tmpfs mounts. Missing facilities fail the explicitly requested test; there is no
-less-isolated fallback. The regular portable test suite leaves this test ignored
+less-isolated fallback. The regular portable test suite leaves these tests ignored
 and therefore does not establish a confinement pass.
 
 From the workspace root, with the pinned Rust toolchain:
@@ -24,8 +25,7 @@ export CARGO_TARGET_DIR="$confinement_target"
 cargo build --locked -p aap-client --example confinement-agent
 export AAP_CONFINEMENT_AGENT="$CARGO_TARGET_DIR/debug/examples/confinement-agent"
 cargo test --locked -p aap-daemon --test process \
-  confinement::confined_agent_uses_only_its_session_attachment \
-  -- --ignored --nocapture
+  confinement:: -- --ignored --nocapture --test-threads=1
 ```
 
 If the host's temporary directory has unsafe ancestor permissions, set
@@ -33,6 +33,11 @@ If the host's temporary directory has unsafe ancestor permissions, set
 fixtures. Do not change host permissions, namespace policy, or trust stores to
 make a gate pass. Build output stays under `/tmp`. Fixtures use only synthetic
 credentials and local services and remove their own private directories.
+
+Run these opt-in cases serially: they deliberately manipulate inheritance of
+synthetic descriptors in the test process. A shared fixture lock also serializes
+the three confinement cases. Do not run them concurrently with unrelated tests
+using `--include-ignored` in that same process.
 
 ## Exact launch boundary
 
@@ -83,6 +88,8 @@ positive-control service fails the test instead of counting as isolation.
 | Case | Current fixture evidence |
 | --- | --- |
 | Approved provider request | Real private key arrives only at the TLS fixture; the client gets a redacted SSE response; both observed views close completely with the request ID |
+| MCP password manager | Actual stdio MCP children perform search, fake-credential issuance, form/JSON login, private CSRF/cookie use, status, and logout in two isolated sessions; cross-session contexts fail and one logout leaves the other session usable |
+| Enrolled TCP | Binary duplex with explicit half-close, exact terminal counts and directional observation, no duplicate reconnect, and session-scoped operation IDs; revoking one session leaves the other usable |
 | Direct networking | Live host-loopback IPv4/IPv6 TCP and UDP canaries remain unreachable from both parent and descendant |
 | Host sockets | Filesystem/abstract Unix canaries, operator, owner-observer, and another session socket are unreachable by their known names |
 | Private files | Actual catalog, daemon configuration, and encrypted vault cannot be opened for read or write; no private file content appears in reports |
@@ -91,14 +98,19 @@ positive-control service fails the test instead of counting as isolation.
 | Privilege/environment | Empty effective/permitted/bounding/ambient capabilities, `no_new_privs`, helper execution followed by denied user-namespace creation, clean environment, and declared limits |
 | Revocation | A working attachment stops dispatch without direct fallback or new fixture receipts |
 | Daemon death/restart | A separate live attachment stops working after abrupt daemon death and remains unusable after restart; only a newly projected attachment succeeds |
-| Required recording/approval | An overflowing required collector and an absent approval mechanism each prevent provider dispatch without exposing credentials or enabling direct access; removing only the collector requirement restores that session's provider path |
+| Required recording/approval | An overflowing required collector and an absent approval mechanism prevent provider, website, and TCP dispatch without direct fallback; removing only the collector requirement restores access. Website observation follows cursors across the visible rejection gap and verifies both completed views of every successful request |
 
-The Rust probe uses the public `aap-client` interface. It has no credential-store
-or engine dependency. Its booleans are test diagnostics, not an agent attestation
-accepted by the daemon. The trusted test runner owns the launch policy, live
+The Rust probe uses the public `aap-client` interface and the credential-free
+`aap-mcp` stdio adapter. Every MCP child repeats the bypass probes before handling
+its tool call; it is a real descendant in the same sandbox, not an in-process
+tool dispatch. The TCP fixture also includes the actual enrolled plaintext peer
+among the direct-connection targets, with separate connection/payload counters.
+Neither executable has a credential-store or engine dependency. The reported
+booleans are test diagnostics, not an agent attestation accepted by the daemon.
+The trusted test runner owns the launch policy, live
 canaries, positive-control requirements, response checks, and evidence result.
 
-Still unverified by this fixture:
+Still unverified by these fixtures:
 
 - DNS/HTTPS/QUIC protocol-specific bypass attempts, non-loopback local/link-local
   and metadata destinations, raw/packet/alternate socket families, and complete
@@ -107,19 +119,22 @@ Still unverified by this fixture:
 - Host memory/ptrace and namespace-joining attacks beyond the process/path and
   inherited-handle checks above; native-store descriptors and actual CA-key
   files; adversarial process-tree teardown and aggregate resource exhaustion.
-- Website/CONNECT, local or remote MCP/tool, and TCP-client operations within
-  this sandbox, including their required-observation and approval failure cases.
-  The recording/approval checks above cover only the provider path.
-  Their existing ordinary process/library tests are separate evidence.
+- CONNECT and remote MCP operations within this sandbox, including their
+  required-observation and approval failure cases. Their existing ordinary
+  process/library tests are separate evidence. Current confined website/TCP
+  tests do not establish every cancellation, midstream-loss, overload, or
+  account/profile variant in their broader acceptance suites.
 - Malicious attachment substitution through request fields and the remaining
   deployment matrix. Knowing another session's pathname is covered, but is not
   the whole substitution suite.
 - Other kernels, architectures, launchers, UID arrangements, or macOS isolation.
 
-The initial acceptance test was run against ordinary, unconfined child execution
-and failed at the expected direct TCP reachability assertion before the isolated
-launcher was added. The extended lifecycle checks are conformance evidence, not
-additional regression discoveries. On 2026-09-23 this fixture passed on Linux
+The initial provider acceptance test ran with ordinary, unconfined child
+execution and failed at the expected direct TCP reachability assertion before the isolated
+launcher was added. The MCP-website and TCP acceptance tests each failed on
+explicitly unsupported probe actions before those paths were implemented.
+The extended lifecycle/failure checks are conformance evidence, not additional
+regression discoveries. On 2026-09-23 these fixtures passed on Linux
 `6.12.107+deb13-amd64`, Bubblewrap `0.12.0`, and util-linux `2.41.5`. The probe
 retained UID/GID 1000; its nested UID and GID maps each reported `1000 0 1`.
 This environment is itself containerized, so the host in this evidence means

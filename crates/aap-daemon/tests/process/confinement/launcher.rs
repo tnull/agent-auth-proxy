@@ -77,7 +77,7 @@ impl Probe {
     }
 }
 
-fn assert_report_shape(report: &Value, job: &Value, descendant: bool) {
+pub(super) fn assert_report_shape(report: &Value, job: &Value, descendant: bool) {
     for (field, input) in [
         ("tcp", "tcp"),
         ("udp", "udp"),

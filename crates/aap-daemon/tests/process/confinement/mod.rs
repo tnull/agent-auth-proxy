@@ -1,6 +1,13 @@
 //! Opt-in OS acceptance test, not part of the portable broker API.
+mod boundary;
 mod canaries;
 mod launcher;
+mod tcp;
+mod website;
+
+// The opt-in fixtures deliberately change inheritance of synthetic FDs.
+// Serialize those fixtures within this test process.
+static LAUNCH_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 use super::*;
 use launcher::Probe;
@@ -89,6 +96,7 @@ async fn attachment(fixture: &Fixture, control: &std::path::Path) -> (SessionAtt
 #[tokio::test]
 #[ignore = "requires Linux namespaces, Bubblewrap, prlimit, and a built AAP_CONFINEMENT_AGENT; see docs/confinement.md"]
 async fn confined_agent_uses_only_its_session_attachment() {
+    let _exclusive = LAUNCH_TEST_LOCK.lock().await;
     let executable = PathBuf::from(
         std::env::var_os("AAP_CONFINEMENT_AGENT")
             .expect("build and explicitly select the confinement-agent example"),

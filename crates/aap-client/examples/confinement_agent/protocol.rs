@@ -11,6 +11,8 @@ use std::{
 pub struct Job {
     pub session: PathBuf,
     pub request: Option<aap_types::ExecuteRequest>,
+    #[serde(default)]
+    pub action: Option<Action>,
     pub tcp: Vec<SocketAddr>,
     pub udp: Vec<SocketAddr>,
     pub unix: Vec<PathBuf>,
@@ -31,6 +33,7 @@ impl Job {
             || self.host_pids.len() > 8
             || self.seeded_fds.len() > 8
             || self.seeded_fds.iter().any(|fd| *fd < 3)
+            || (self.request.is_some() && self.action.is_some())
         {
             return Err(io::Error::other("probe bounds"));
         }
@@ -59,7 +62,28 @@ pub struct Report {
     pub gid_map: String,
     pub limits: BTreeMap<String, u64>,
     pub request: Option<RequestResult>,
+    pub action: Option<ActionResult>,
     pub descendant: Option<Box<Report>>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    Mcp {
+        name: String,
+        arguments: serde_json::Value,
+    },
+    Stream {
+        open: aap_types::stream::Open,
+        send: Vec<u8>,
+    },
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActionResult {
+    pub value: Option<serde_json::Value>,
+    pub error: Option<aap_types::ErrorCode>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
