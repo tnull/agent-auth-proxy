@@ -32,6 +32,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
+ "rustix",
  "serde",
  "serde_json",
  "tokio",

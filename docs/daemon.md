@@ -188,8 +188,10 @@ CONNECT with provider and website authentication, authority/context isolation,
 CA rotation, and independent upstream trust. Four remote-MCP process tests
 add JSON/SSE, native session/account isolation, stdio bridging, CONNECT,
 reviewed tool admission, private control children, cancellation, DELETE, and
-uncertain-delivery/no-replay evidence. Filesystem/network confinement remains
-unverified; these fixture processes do not establish a sandbox boundary.
+uncertain-delivery/no-replay evidence. These ordinary fixture processes do not
+establish a sandbox boundary; a separate opt-in [Linux fixture](confinement.md)
+now exercises the provider path with actual filesystem/network/process isolation.
+It does not yet establish confined MCP or CONNECT coverage.
 The tunneled website test also runs the enrolled 303 variant: no implicit
 follow-up is sent, and its separately submitted GET has no credential body.
 
@@ -200,5 +202,6 @@ invalid reload, and denial before upstream dispatch on required queue overflow.
 The TCP process fixture uses a separate enrolled local peer and raw session
 upgrade. It verifies binary-only upstream delivery, explicit half-close,
 terminal/status agreement, duplicate-open no-reconnect behavior, malformed
-header refusal, and operator-route separation. The agent TCP client and actual
-confinement tests remain pending; see [tcp.md](tcp.md).
+header refusal, and operator-route separation. A second fixture exercises the
+credential-free TCP client, cancellation, and drop. Confined TCP acceptance
+remains pending; see [tcp.md](tcp.md).

@@ -26,12 +26,14 @@ request tools, with real-process form/JSON website tests. Optional
 requests through the session socket. [Communication observation](docs/observation.md)
 now correlates sanitized agent/upstream views, ordered content, and logical
 request endings. Collectors have operator-enrolled private session/content
-subscriptions with isolated cursors and acknowledgments. Complete remote MCP, TCP,
-complete connection coverage, and confinement demonstrations remain pending.
+subscriptions with isolated cursors and acknowledgments. Complete remote MCP,
+TCP acceptance, and complete connection coverage remain pending.
 The [TCP endpoint](docs/tcp.md) now supports enrolled, bounded binary streams
 through the daemon with safe observation, explicit half-close, and retained
 terminal status. The credential-free client now uses that endpoint; broader
-adversarial acceptance and the confinement demonstration remain pending.
+adversarial acceptance remains pending. An opt-in [Linux confinement fixture](docs/confinement.md)
+now exercises a provider client inside actual namespaces with live bypass
+canaries and revocation/restart checks; the broader confinement suite is incomplete.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
 upstream contexts. Real HTTPS initialization/list/call, admitted control replies,

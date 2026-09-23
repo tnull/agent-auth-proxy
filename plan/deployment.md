@@ -1,6 +1,8 @@
 # Sandbox deployment and confinement contract
 
-Status: proposed deployment requirements, not evidence of a working sandbox.
+Status: deployment requirements; partial implementation evidence is recorded
+separately in the [Linux fixture guide](../docs/confinement.md). The complete
+acceptance suite below has not passed.
 This document makes the [architecture's](architecture.md) external enforcement
 assumption testable. Keep the current project/package names. It adds neither
 a sandbox framework dependency nor a new upstream authentication protocol.

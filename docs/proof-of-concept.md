@@ -1178,3 +1178,48 @@ features; no external package or custody dependency was added. Its normal/build
 dependency tree and package-only check contain no trusted engine/store code.
 Full allocation/concurrency/loss-injection acceptance, independent consumer and
 embedding parity, and the actual sandbox proof remain incomplete W7/W8 gates.
+
+## First Linux confinement evidence
+
+The optional [confinement fixture](confinement.md) now runs a separate Rust
+provider client inside real Linux user/network/mount/PID/IPC/UTS namespaces.
+Only one session socket and the probe's individual runtime files are projected;
+the daemon, private catalog, SQLCipher vault, and operator/observer listeners
+stay outside. The external test harness composes Bubblewrap and finite resource
+limits without introducing a sandbox dependency into the daemon or libraries.
+
+Unconfined positive controls first prove that both the probe and its descendant
+can reach live IPv4/IPv6 TCP/UDP and filesystem/abstract Unix canaries, private
+fixture files, known host processes, and deliberately inherited authority
+handles. The confined runs deny those paths, remove the synthetic environment
+canary, drop capabilities, retain no-new-privileges, and deny further user
+namespaces. Trusted receipt counters remain unchanged. The client still obtains
+the redacted provider response; the TLS fixture receives the private API key,
+and both correlated observation views close completely.
+
+Revocation prevents further dispatch. A separate working attachment fails
+after abrupt daemon death and remains unusable after restart, while a newly
+projected attachment succeeds. Required collector overflow and an unavailable
+approval mechanism each deny provider dispatch without changing the isolation
+boundary. Removing that collector requirement restores its provider path.
+
+The original acceptance test failed at the direct TCP reachability assertion
+with ordinary process execution before the isolated launcher was implemented.
+The extended lifecycle and failure checks are additional conformance evidence.
+The fixture remains opt-in: a regular test-suite skip is not a confinement pass,
+and an explicitly requested run fails if prerequisites are absent. The guide
+records the kernel, launcher, identity mapping, exact coverage, and remaining
+gates, including the limits of testing inside an already-containerized host.
+
+All 276 unit tests, nineteen ordinary daemon process tests, and the compile-fail
+doctest pass on Rust 1.95.0 and 1.88.0; the additional confinement process test
+passes when invoked explicitly on both toolchains. All-target checks pass on
+both; stable formatting, warning-free Clippy, and warning-free documentation
+pass. The probe adds only an existing `rustix` development dependency on Linux;
+the normal client dependency graph remains credential-free.
+
+This is partial W4/W8 deployment evidence, not complete confinement or a
+production launcher. Confined website/CONNECT/MCP/TCP paths, protocol-specific
+and alternate-family bypasses, stronger process-escape/teardown coverage, and
+the rest of the deployment matrix remain required. W0-W9 are not marked
+complete by this provider-only demonstration.

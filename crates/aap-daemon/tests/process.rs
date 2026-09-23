@@ -19,6 +19,8 @@ use std::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+#[path = "process/confinement/mod.rs"]
+mod confinement;
 #[path = "process/interception.rs"]
 mod interception;
 #[path = "process/observation.rs"]
