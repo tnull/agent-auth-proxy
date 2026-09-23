@@ -9,6 +9,8 @@ use bytes::Bytes;
 
 const DECODED_LEN: usize = 51;
 const MAX_ENCODED: usize = DECODED_LEN * 6;
+mod immediate;
+pub use immediate::ImmediatePlaceholderRedactor;
 #[derive(Default)]
 pub struct PlaceholderRedactor {
     pending: Vec<u8>,

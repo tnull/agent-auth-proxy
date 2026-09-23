@@ -78,8 +78,10 @@ forwarded if it contains excess data.
 Eleven tests include real binary TCP traffic and both half-close orders,
 required-gate rejection, cancellation before writes, partial-write accounting,
 exact/exceeded directional limits, real driver wakeups, idle/lifetime/stall
-deadlines, bounded ready-peer polling, and unpolled owner termination. This is
-not yet wired into the engine's application path or local protocol. A framed
+deadlines, bounded ready-peer polling, and unpolled owner termination. The
+[engine](../aap-engine/README.md#tcp-admission-and-connection-ownership) now adds
+owned lifecycle, observation, and final commitment for trusted application I/O;
+the local framed protocol is still pending. A framed
 adapter must map explicit SEND_END to application EOF, unexpected attachment
 EOF to failure, and maintain separate bounded final-control delivery; these
 native-stream fixtures do not establish those agent-wire semantics.

@@ -23,11 +23,13 @@ daemon form-login test using fake credentials and private cookies. The
 [credential-free MCP bridge](docs/mcp.md) now exposes the vault and bounded
 request tools, with real-process form/JSON website tests. Optional
 [CONNECT/TLS inspection](docs/connect.md) also brokers provider and website
-requests through the session socket. [HTTP observation](docs/observation.md)
+requests through the session socket. [Communication observation](docs/observation.md)
 now correlates sanitized agent/upstream views, ordered content, and logical
 request endings. Collectors have operator-enrolled private session/content
 subscriptions with isolated cursors and acknowledgments. Complete remote MCP, TCP,
 complete connection coverage, and confinement demonstrations remain pending.
+The trusted engine now forwards bounded TCP application streams with safe
+observation and owned cancellation; its agent-facing framed endpoint is pending.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
 upstream contexts. Real HTTPS initialization/list/call, admitted control replies,

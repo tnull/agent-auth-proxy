@@ -51,10 +51,27 @@ reconnect. Approval, preparation, idle, and lifetime deadlines do not extend whe
 a late future becomes ready; connection attempts have conservative uncertainty.
 
 `ConnectedTcp` retains the socket privately and reports opening limits with the
-remaining original lifetime. It does not yet expose application I/O. Duplex
-relay, payload observation, HTTP upgrade, credential-free service/client binding,
-and actual daemon/confinement integration remain pending. These trusted APIs do
-not establish an operational agent TCP endpoint.
+remaining original lifetime. Its `relay` method immediately transfers a trusted
+application attachment into engine ownership and returns a `TcpRelay` future.
+Cancellation, revocation, drop, or a watchdog closes both directions and releases
+capacity, even if that future is not polled. Successful writes refresh idle
+time but never extend the original lifetime or a stalled opposite direction.
+Actual accepted-prefix byte counts survive termination. Both orderly ends and
+successful required terminal observation are needed for completion.
+
+Payload observation records paired, ordered agent/upstream views with the
+declared plaintext, opaque, or metadata-only inspection class. Conservative
+placeholder suppression does not delay interactive bytes or modify application
+traffic. Every chunk needs fresh required-observation admission, including a
+fully withheld chunk. These TCP paths make no secret-store calls. Each relay
+uses at most 16 KiB of core buffering per direction, leaving space in its
+128 KiB reservation for the planned framing buffers and redaction scratch.
+
+This trusted native-I/O entry point is not an agent TCP endpoint. HTTP upgrade,
+credential-free service/client binding, framed send-end/attachment-loss behavior,
+and actual daemon/confinement integration remain pending. A future wire adapter
+must finish OPENED before forwarding, map explicit SEND_END to application EOF,
+reject raw attachment EOF, and keep bounded final-control delivery separate.
 
 ## Remote MCP integration
 

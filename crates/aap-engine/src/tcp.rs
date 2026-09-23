@@ -9,7 +9,10 @@ use aap_transport::tcp::{TcpEndpoint, TcpSocket};
 use aap_types::stream;
 
 mod connect;
+mod observation;
+mod relay;
 mod state;
+pub use relay::TcpRelay;
 pub(super) use state::Operation;
 use state::{AttachmentSlots, Capacity, State};
 
@@ -138,12 +141,17 @@ impl Session {
                 socket: None,
                 capacity: None,
                 attachments: Some(attachments),
+                relay: None,
+                deadline: None,
+                sent_bytes: 0,
+                received_bytes: 0,
             }),
             request: Arc::new(request),
             profile,
             required,
             flow,
             cancelled: Cancellation::default(),
+            changed: tokio::sync::Notify::new(),
         });
         operations.bytes += bytes;
         operations

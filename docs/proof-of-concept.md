@@ -994,3 +994,47 @@ terminal integration, explicit framed send-end/attachment-loss handling, local
 upgrade/client APIs, and the actual daemon/sandbox demonstration remain pending.
 Raw application EOF in these native fixtures does not prove that an agent-wire
 EOF is accepted as an orderly end; the future framed adapter must reject it.
+
+## Engine-owned TCP payload and observation
+
+`ConnectedTcp::relay` now transfers a trusted application attachment directly
+into the operation's owned state. Its future drives bounded duplex forwarding,
+with paired safe agent/upstream observation before each chunk/end and final
+recording before completed status. Plaintext, opaque, and metadata-only modes
+remain distinct; empty safe content still requires recording admission. Flow
+close counts actual application write prefixes, while content offsets/endings
+count sanitized bytes. No TCP path calls any secret-store method.
+
+Immediate conservative placeholder suppression masks possible token suffixes
+without waiting for another application message. Subsequent continuation stays
+hidden, including after a mismatch; boundary false positives affect observation
+only. This avoids interactive deadlock without changing actual forwarded bytes.
+Recognition is bounded to the documented representations, not arbitrary covert
+encodings. Each relay uses 16 KiB-or-smaller core buffers per direction within
+its pre-reserved payload budget, with separately bounded recorder storage.
+
+Cancellation, revocation, drop, and the dynamic watchdog close retained I/O and
+release capacity without a second driver poll. Successful application progress
+refreshes idle time without extending absolute lifetime. Terminal commitment
+wakes the waiting owner before dropping its cancellation registration; arbitrary
+I/O adapters need not supply a drop wakeup. Accepted partial-write counts remain
+available after resources are released, and later cancellation cannot replace
+an already committed outcome.
+
+Three new authentication tests and nine engine tests cover all supported token
+representations/splits, interactive binary traffic, both half-close orders,
+all inspection classes, required and best-effort recorder outages, final-batch
+refusal, partial counts, unpolled cancellation/revocation/drop, dynamic idle and
+absolute lifetime, and completion/wakeup ordering. The initial redactor and four
+engine integration tests failed against their compiling stubs before
+implementation. Further deterministic tests exposed an expired-timer rearm and
+lost owner wakeup before their fixes; additional passing draft checks are
+conformance evidence, not claims of new regression discovery.
+
+All 240 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0. All-target checks pass on both; stable formatting,
+warning-free Clippy, and warning-free documentation pass. No dependency or Cargo
+feature was added. The local HTTP upgrade, credential-free service/client API,
+framed send-end/attachment-loss behavior, reserved control capacity, and real
+daemon/confinement fixtures remain pending. Trusted native-I/O forwarding does
+not complete W7 or establish an operational agent TCP endpoint.

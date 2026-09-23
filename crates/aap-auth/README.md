@@ -95,3 +95,15 @@ provider prompts/responses and fully inspected website views. It does not
 remove an agent's legitimate placeholder from its provider response. Unit
 tests exercise every split boundary of the supported representations, ordinary
 data preservation, and finite retained state.
+
+`ImmediatePlaceholderRedactor` provides a conservative alternative for
+interactive TCP observation. It immediately masks a possible token suffix,
+then suppresses its continuation across feeds. It never waits for another
+application message and never restores already masked bytes after a mismatch.
+Chunk-boundary false positives are intentional: only observation changes, not
+the original application bytes. Recognition covers the same representations
+as above without looking up any real credentials. Each feed accepts at most
+256 KiB, retains at most 305 already-hidden source bytes, and returns at most
+the chunk length plus one nine-byte marker. Three tests cover every split,
+single-byte feeds, binary/interactive input, conservative mismatches, finite
+retention, end-of-stream, and oversized-input refusal.

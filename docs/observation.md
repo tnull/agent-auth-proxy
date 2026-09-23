@@ -1,4 +1,4 @@
-# Current HTTP observation binding
+# Current communication observation
 
 This documents the implemented subset of the
 [observation design](../plan/observability.md), not completion of W7.
@@ -91,6 +91,31 @@ unavailable, terminal events cannot be guaranteed: consumed event IDs and the
 resume/gap mechanism expose missing coverage. An incomplete or missing ending
 must never be inferred to be success.
 
+## Trusted TCP relay observation
+
+The engine's native-I/O TCP relay now emits logical opening/policy records,
+paired directional content and endings, and final flow records. Inspection
+is explicitly `plaintext_bytes`, `opaque`, or `metadata_only` from enrollment;
+raw byte forwarding does not manufacture HTTP, MCP, or authentication events.
+Both views carry the same sanitized bytes because this relay performs no
+authentication substitution. It never accesses a secret store.
+
+Interactive streams use immediate conservative placeholder suppression:
+possible token suffixes are masked at once, then their continuations stay
+hidden. This permits false positives at chunk boundaries but avoids waiting
+for another application message. Actual application bytes remain unchanged.
+Metadata-only content is withheld. Empty safe chunks still establish fresh
+required-recording acceptance before forwarding withheld source bytes; they
+are not empty application frames. Content offsets and endings count sanitized
+bytes; TCP flow-close totals instead count actual application write prefixes,
+which can be smaller after a partial write or cancellation.
+
+Only two orderly ends and an accepted required terminal batch permit completed
+status. Cancellation/drop/timeouts attempt incomplete endings and preserve
+actual write counts. Required recording outages stop new forwarding; best-effort
+loss follows the existing gap contract. These native-I/O tests do not establish
+the still-pending local framed endpoint or daemon TCP support.
+
 ## Scoped collectors
 
 The operator can enroll up to sixteen private collector attachments through the
@@ -134,6 +159,6 @@ not the complete runtime directory. No collector gains policy-write, session
 creation, approval, or credential-store authority.
 
 Still pending: physical TCP/TLS connection lifecycle and tunnel/subrequest correlation;
-remote MCP and TCP coverage; parsed message convenience events; and expanded
+remote MCP and daemon TCP coverage; parsed message convenience events; and expanded
 auth state events. These limitations prevent claiming complete communication
 observation or checking off W7.

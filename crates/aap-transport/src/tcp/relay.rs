@@ -182,7 +182,9 @@ impl Duplex {
         self.close(gate_cause(cause))
     }
 
-    fn deadline(&self) -> Instant {
+    /// Current earliest I/O deadline. A trusted owner's watchdog must re-read
+    /// it under the same ownership lock before expiring an unpolled relay.
+    pub fn deadline(&self) -> Instant {
         self.directions
             .iter()
             .filter_map(|state| state.stalled)

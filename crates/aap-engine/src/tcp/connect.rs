@@ -43,21 +43,13 @@ impl PendingTcp {
         }
         state.socket = Some(socket);
         state.capacity = Some(capacity);
+        state.deadline = Some(timing.idle);
         state.attachments.take();
         drop(state);
         self.transferred = true;
         let operation = self.operation.clone();
         let cancelled = self.session.core.cancelled.clone();
-        let deadline = timing.idle;
-        let watchdog = tokio::spawn(async move {
-            let cause = tokio::select! {
-                biased;
-                _ = operation.cancelled.cancelled() => stream::Cause::Cancelled,
-                _ = cancelled.cancelled() => stream::Cause::SessionEnded,
-                _ = tokio::time::sleep_until(deadline) => stream::Cause::Timeout,
-            };
-            operation.finish(cause);
-        });
+        let watchdog = tokio::spawn(async move { operation.watch(cancelled).await });
         Ok(ConnectedTcp {
             session: self.session.clone(),
             operation: self.operation.clone(),
