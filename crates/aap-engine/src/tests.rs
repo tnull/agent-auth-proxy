@@ -234,6 +234,7 @@ mod dispatch;
 mod lifecycle;
 mod observation;
 mod proxy;
+mod publication;
 mod remote_mcp;
 mod tcp;
 mod vault;

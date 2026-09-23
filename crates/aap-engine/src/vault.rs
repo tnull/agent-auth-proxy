@@ -303,15 +303,29 @@ impl Session {
                     return Err(ErrorCode::LimitExceeded.into());
                 }
                 let id = binding.id.clone();
-                vault.contexts.insert(id.clone(), binding);
-                Ok(id)
+                #[cfg(test)]
+                self.before_publication(&operation.request.request_id);
+                self.commit_authority(|| {
+                    if operation.cancelled.is_cancelled() {
+                        return Err(ErrorCode::RequestConflict.into());
+                    }
+                    if binding.cancelled.is_cancelled() || binding.expires <= Instant::now() {
+                        return Err(ErrorCode::PlaceholderInvalid.into());
+                    }
+                    vault.contexts.insert(id.clone(), binding);
+                    state.status.state = OperationState::Completed;
+                    state.result = Some(Ok(id.clone()));
+                    Ok(id)
+                })
             });
-            state.status.state = match &prepared {
-                Ok(_) => OperationState::Completed,
-                Err(error) if error.code == ErrorCode::PolicyDenied => OperationState::Denied,
-                Err(_) => OperationState::Failed,
-            };
-            state.result = Some(prepared.clone());
+            if let Err(error) = &prepared {
+                state.status.state = match error.code {
+                    ErrorCode::SessionInvalid => OperationState::Cancelled,
+                    ErrorCode::PolicyDenied => OperationState::Denied,
+                    _ => OperationState::Failed,
+                };
+                state.result = Some(Err(error.clone()));
+            }
             guard.finished = true;
             prepared
         } else {

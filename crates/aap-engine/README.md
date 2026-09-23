@@ -91,10 +91,17 @@ outside the completion lock; they do not exclude native changes after the last
 check or claim that an external backend participates in a local transaction.
 
 This is not an aggregate drain result or a proof of all private-state races.
-Placeholder issuance, generation reload, backend change detection, and the full
+Generation reload, native backend change detection, and the full
 daemon/embedded lifecycle acceptance matrix remain separate gates. Retained
 responses may still own private buffers until the host drops/drives them; no
 claim of immediate memory erasure or remote consumer receipt follows.
+
+Placeholder issuance and upstream MCP context/request admission also share the
+authority boundary. Preparation may allocate a tentative binding, but it cannot
+publish that binding or an issuance success after authority retirement. Rejected
+creation releases its reserved context capacity. Existing completed issuances
+remain completed, while an interrupted non-dispatched issuance is cancelled.
+No new native access, recording, or cancellation callback runs under admission.
 
 ## TCP admission and connection ownership
 

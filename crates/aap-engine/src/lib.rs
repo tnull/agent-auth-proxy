@@ -94,6 +94,8 @@ struct Host {
     dispatch_hook: Mutex<Option<DispatchHook>>,
     #[cfg(test)]
     completion_hook: Mutex<Option<DispatchHook>>,
+    #[cfg(test)]
+    publication_hook: Mutex<Option<DispatchHook>>,
     operation_bytes: AtomicUsize,
     contexts: Arc<Semaphore>,
     login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
@@ -223,6 +225,8 @@ impl Broker {
                 dispatch_hook: Mutex::new(None),
                 #[cfg(test)]
                 completion_hook: Mutex::new(None),
+                #[cfg(test)]
+                publication_hook: Mutex::new(None),
                 operation_bytes: AtomicUsize::new(0),
                 contexts: Arc::new(Semaphore::new(64)),
                 login_attempts: Mutex::new(HashMap::new()),
@@ -436,6 +440,13 @@ impl Broker {
 }
 impl Session {
     #[cfg(test)]
+    fn before_publication(&self, id: &str) {
+        let hook = self.core.host.publication_hook.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook(id);
+        }
+    }
+    #[cfg(test)]
     fn before_completion(&self, id: &str) {
         let hook = self.core.host.completion_hook.lock().unwrap().take();
         if let Some(hook) = hook {
@@ -468,7 +479,7 @@ impl Session {
     /// cancellation notification, native work, or external callback. Closure
     /// and revocation release admission before walking any of those locks;
     /// admission is always last, never held while waiting for cleanup.
-    fn commit_authority(&self, commit: impl FnOnce() -> Result<()>) -> Result<()> {
+    fn commit_authority<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
         let _admission = self
             .core
             .host

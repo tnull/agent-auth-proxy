@@ -177,13 +177,20 @@ impl Session {
     }
     fn prepare_remote(
         &self,
-        input: &ExecuteRequest,
+        operation: &Operation,
         message: Request,
         metadata: &ItemMetadata,
         reference: ItemRef,
         store: Arc<dyn SecretStore>,
         reservation: Reservation,
     ) -> Result<Exchange> {
+        let input = &operation.request;
+        // Admission never acquires these locks. Retirement releases admission
+        // before walking operations/contexts, preserving that same lock order.
+        let operation_state = operation
+            .state
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?;
         let resource = input.resource.as_str();
         let mut vault = self
             .core
@@ -207,57 +214,71 @@ impl Session {
         {
             binding.invalidate();
         }
-        let binding = if let Some(binding) = current.filter(|binding| binding.check().is_ok()) {
-            binding
-        } else {
-            if message.method() != Method::Initialize {
-                return Err(ErrorCode::RequestConflict.into());
-            }
-            if vault.contexts.len() >= 16 {
-                return Err(ErrorCode::LimitExceeded.into());
-            }
-            let permit = self
-                .core
-                .host
-                .contexts
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| ErrorCode::LimitExceeded)?;
-            let now = Instant::now();
-            let expires = self.core.expires.min(now + Duration::from_secs(600)).min(
-                metadata
-                    .valid_until
-                    .map(Instant::from_std)
-                    .unwrap_or(self.core.expires),
-            );
-            let profile = self
-                .core
-                .host
-                .remote_profiles
-                .get(resource)
-                .ok_or(ErrorCode::PolicyDenied)?
-                .clone();
-            let binding = Arc::new(Binding {
-                id: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
-                state: Mutex::new(Context::new(profile, now.into_std(), expires.into_std())?),
-                lease: metadata.lease.clone(),
-                reference,
-                store,
-                expires,
-                handshake: now + Duration::from_secs(30),
-                cancelled: Cancellation::default(),
-                closing: AtomicBool::new(false),
-                _permit: permit,
-            });
-            vault.contexts.push((resource.into(), binding.clone()));
-            binding
+        let (binding, fresh) =
+            if let Some(binding) = current.filter(|binding| binding.check().is_ok()) {
+                (binding, false)
+            } else {
+                if message.method() != Method::Initialize {
+                    return Err(ErrorCode::RequestConflict.into());
+                }
+                if vault.contexts.len() >= 16 {
+                    return Err(ErrorCode::LimitExceeded.into());
+                }
+                let permit = self
+                    .core
+                    .host
+                    .contexts
+                    .clone()
+                    .try_acquire_owned()
+                    .map_err(|_| ErrorCode::LimitExceeded)?;
+                let now = Instant::now();
+                let expires = self.core.expires.min(now + Duration::from_secs(600)).min(
+                    metadata
+                        .valid_until
+                        .map(Instant::from_std)
+                        .unwrap_or(self.core.expires),
+                );
+                let profile = self
+                    .core
+                    .host
+                    .remote_profiles
+                    .get(resource)
+                    .ok_or(ErrorCode::PolicyDenied)?
+                    .clone();
+                let binding = Arc::new(Binding {
+                    id: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
+                    state: Mutex::new(Context::new(profile, now.into_std(), expires.into_std())?),
+                    lease: metadata.lease.clone(),
+                    reference,
+                    store,
+                    expires,
+                    handshake: now + Duration::from_secs(30),
+                    cancelled: Cancellation::default(),
+                    closing: AtomicBool::new(false),
+                    _permit: permit,
+                });
+                (binding, true)
+            };
+        let exchange = {
+            let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            #[cfg(test)]
+            self.before_publication(&input.request_id);
+            self.commit_authority(|| {
+                if terminal(operation_state.state) || operation.cancelled.is_cancelled() {
+                    return Err(ErrorCode::RequestConflict.into());
+                }
+                if binding.cancelled.is_cancelled() || binding.expires <= Instant::now() {
+                    return Err(ErrorCode::SessionInvalid.into());
+                }
+                let exchange = state
+                    .begin(message, &input.request_id, Instant::now().into_std())?
+                    .ok_or(ErrorCode::RequestConflict)?;
+                if fresh {
+                    vault.contexts.push((resource.into(), binding.clone()));
+                }
+                Ok(exchange)
+            })?
         };
-        let exchange = binding
-            .state
-            .lock()
-            .map_err(|_| ErrorCode::InternalError)?
-            .begin(message, &input.request_id, Instant::now().into_std())?
-            .ok_or(ErrorCode::RequestConflict)?;
         Ok(Exchange {
             binding,
             exchange: Some(exchange),
@@ -365,14 +386,22 @@ impl Session {
                 return Err(error.into());
             }
         };
-        let exchange = self.prepare_remote(
-            &input,
-            message,
-            &metadata,
-            reference,
-            store,
-            request_reservation,
-        )?;
+        let exchange = self
+            .prepare_remote(
+                &guard.operation,
+                message,
+                &metadata,
+                reference,
+                store,
+                request_reservation,
+            )
+            .inspect_err(|error| {
+                if error.code == ErrorCode::SessionInvalid {
+                    // The retirement walk may still be waiting for another item.
+                    // This pre-dispatch operation must not become a generic failure.
+                    guard.operation.cancel();
+                }
+            })?;
         let binding = exchange.binding.clone();
         guard.remote = Some(exchange);
         let deadline = deadline.min(binding.deadline()?);

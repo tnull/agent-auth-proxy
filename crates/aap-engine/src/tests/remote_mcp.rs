@@ -9,6 +9,39 @@ mod cleanup;
 mod controls;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn publication_gate_rejects_retired_remote_context_creation() {
+    use super::{dispatch::EndAuthority, publication::retire_at_publication};
+    for end in [EndAuthority::Broker, EndAuthority::Session] {
+        let fixture = fixture(false, false).await;
+        let broker = Arc::new(Broker::new(configuration(&fixture)).unwrap());
+        let positive = broker.create_session(options()).unwrap();
+        handshake(&fixture, &positive).await;
+        response_json(positive.execute(request(&fixture, call())).await.unwrap()).await;
+        assert_eq!(broker.host.contexts.available_permits(), 63);
+        let session = broker.create_session(options()).unwrap();
+        let input = request(&fixture, initialize());
+        let running = session.clone();
+        let (result, status) = retire_at_publication(broker.clone(), &session, end, async move {
+            running.execute(input).await
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(status.state, OperationState::Cancelled);
+        assert_eq!(
+            broker.host.contexts.available_permits(),
+            63,
+            "retired initialization published a new context"
+        );
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 3);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        if matches!(end, EndAuthority::Session) {
+            response_json(positive.execute(request(&fixture, call())).await.unwrap()).await;
+            assert_eq!(fixture.origin.requests.lock().unwrap().len(), 4);
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn completion_gate_rejects_late_remote_initialization() {
     remote_completion_boundary(false).await;
 }

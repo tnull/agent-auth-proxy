@@ -1700,3 +1700,39 @@ Independent consumers and opt-in confinement were not rerun for this correction.
 The correction does not make store revalidation atomic with external native
 edits or interrupt native work. The separate publication, reload, shutdown,
 Keychain, and recovery gates remain open.
+
+## Ordered credential-context publication
+
+Placeholder issuance now commits its catalog binding, retained result, and
+completed state under the same authority boundary as dispatch/completion.
+Retirement winning that boundary leaves the issuance cancelled and publishes
+no new binding. Preparation may allocate a tentative context, but rejection
+releases that capacity; an existing completed issuance is not rewritten.
+
+Remote MCP context creation and request-mapping admission use the same boundary.
+Operation, vault, and protocol state are acquired before admission; native
+metadata access and construction stay outside it. A newly prepared context
+enters the vault only with successful protocol admission under current session
+authority. No password resolution, upstream send, or retry follows rejection.
+
+Two regressions use explicit publication barriers with both whole-broker closure
+and individual session revocation. Before implementation, placeholder issuance
+became completed after retirement; remote initialization retained a new context
+even though later dispatch was denied. Tests inspect retained issuance state,
+catalog size, and context permits rather than treating a returned error as proof
+that publication was prevented. SQLCipher metadata, successful MCP handshake/call
+controls, counted credential resolutions/origin receipts, and an unaffected
+second session establish the positive and isolation cases. Both tests failed
+before implementation, passed afterward, failed again with the production-only
+change removed, and passed after restoration. The barriers are test-only.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0:
+314 unit tests, nineteen ordinary daemon process tests, and the compile-fail
+doctest. All nine independent consumer tests pass on both compilers with
+matching daemon builds. Formatting, warning-free Clippy, and public docs pass
+on 1.95.0. The opt-in confinement suite was not rerun for this change.
+
+This extends L6's local publication evidence without adding dependencies or wire
+fields. Generation replacement, complete daemon/embedded lifecycle parity,
+held-resource drain, and the remaining native custody/recovery gates are still
+open. It does not promise remote rollback or universal backend revocation.
