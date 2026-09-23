@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -87,6 +87,7 @@ struct Host {
     configuration: Configuration,
     epoch: String,
     sessions: Mutex<HashMap<String, Weak<SessionCore>>>,
+    closed: AtomicBool,
     operation_bytes: AtomicUsize,
     contexts: Arc<Semaphore>,
     login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
@@ -210,6 +211,7 @@ impl Broker {
                 configuration,
                 epoch: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
                 sessions: Mutex::new(HashMap::new()),
+                closed: AtomicBool::new(false),
                 operation_bytes: AtomicUsize::new(0),
                 contexts: Arc::new(Semaphore::new(64)),
                 login_attempts: Mutex::new(HashMap::new()),
@@ -222,6 +224,9 @@ impl Broker {
         })
     }
     pub fn create_session(&self, options: SessionOptions) -> Result<Session> {
+        if self.is_closed() {
+            return Err(ErrorCode::SessionInvalid.into());
+        }
         let mut resources = std::collections::HashSet::new();
         let mut items = std::collections::HashSet::new();
         if options.lifetime.is_zero()
@@ -259,6 +264,11 @@ impl Broker {
             .sessions
             .lock()
             .map_err(|_| ErrorCode::InternalError)?;
+        // Serialize publication with close's snapshot. The early check alone
+        // cannot prevent a concurrent creator from escaping revocation.
+        if self.is_closed() {
+            return Err(ErrorCode::SessionInvalid.into());
+        }
         sessions.retain(|_, session| session.strong_count() > 0);
         if sessions.len() >= 64 {
             return Err(ErrorCode::LimitExceeded.into());
@@ -296,6 +306,52 @@ impl Broker {
         });
         sessions.insert(id, Arc::downgrade(&core));
         Ok(Session { core })
+    }
+    /// Irreversibly stop session admission and revoke every live session.
+    ///
+    /// Concurrent creators either publish before closure and are revoked, or
+    /// fail with `SessionInvalid`. All retained session clones lose authority.
+    /// Repeated calls are safe and retry local cleanup. A cleanup error leaves
+    /// admission closed and does not skip cancellation of other sessions.
+    ///
+    /// This is authority closure, not an asynchronous drain. The host must stop
+    /// its listeners, cancel/drop owned executions and response bodies, and join
+    /// owned tasks within its deadline. Already dispatched effects are not undone;
+    /// native work need not have returned. This does not lock shared stores.
+    pub fn close(&self) -> Result<()> {
+        let (sessions, mut failed) = {
+            let (registry, poisoned) = match self.host.sessions.lock() {
+                Ok(registry) => (registry, false),
+                Err(error) => (error.into_inner(), true),
+            };
+            self.host.closed.store(true, Ordering::Release);
+            (
+                registry
+                    .values()
+                    .filter_map(Weak::upgrade)
+                    .collect::<Vec<_>>(),
+                poisoned,
+            )
+        };
+        // Wake everyone before potentially failing cleanup. Never invoke
+        // cancellation wakers or adapter cleanup under the admission lock.
+        for session in &sessions {
+            session.cancelled.cancel();
+        }
+        for core in sessions {
+            if self.revoke(&Session { core }).is_err() {
+                failed = true;
+            }
+        }
+        if failed {
+            Err(ErrorCode::InternalError.into())
+        } else {
+            Ok(())
+        }
+    }
+    /// Whether admission is permanently closed; not evidence of resource drain.
+    pub fn is_closed(&self) -> bool {
+        self.host.closed.load(Ordering::Acquire)
     }
     pub fn revoke(&self, session: &Session) -> Result<()> {
         if !Arc::ptr_eq(&self.host, &session.core.host) {
@@ -351,7 +407,10 @@ impl Session {
         &self.core.id
     }
     fn check(&self) -> Result<()> {
-        if self.core.cancelled.is_cancelled() || self.core.expires <= Instant::now() {
+        if self.core.host.closed.load(Ordering::Acquire)
+            || self.core.cancelled.is_cancelled()
+            || self.core.expires <= Instant::now()
+        {
             Err(ErrorCode::SessionInvalid.into())
         } else {
             Ok(())

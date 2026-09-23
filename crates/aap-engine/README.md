@@ -26,6 +26,29 @@ are capped at five minutes and operations at ten minutes/session expiry.
 These are admission ceilings, not production capacity claims. Further quota,
 expiry, restart/reload, and multi-thread race coverage remains part of W1/W4.
 
+## Broker-wide authority closure
+
+`Broker::close()` permanently stops session admission and revokes every live
+session, including clones retained by other adapters. Creation racing closure
+either fails with `SessionInvalid` or returns a session included in revocation.
+Repeated/concurrent closure is safe. `Broker::is_closed()` reports admission
+state, not successful resource cleanup. Restart requires a new broker.
+
+Closure cancels all session signals before attempting their local cleanup. A
+poisoned registry or session cleanup reports `InternalError`, keeps admission
+closed, and does not skip cancellation of other sessions. Repeating closure
+retries cleanup; it cannot repair poisoned state or promise full cleanup.
+Independent brokers and shared backing stores are not closed or locked.
+
+This synchronous operation is not complete shutdown. Hosts still stop their
+listeners, cancel/drop execution futures and response bodies, and join owned
+tasks with a finite deadline. In particular, an unpolled HTTP body can retain
+its connection driver until the owner drives cancellation or drops it. Native
+work may still finish later, and already dispatched effects cannot be undone.
+TCP revocation closes the sockets and capacity owned by retained TCP handles;
+that does not establish the broader drain contract for all adapters.
+See the remaining [lifecycle acceptance gates](../../plan/lifecycle.md).
+
 ## TCP admission and connection ownership
 
 The separate `Configuration.tcp_profiles` collection is validated at broker

@@ -6,6 +6,64 @@ mod framed;
 mod relay;
 mod service;
 
+#[tokio::test]
+async fn broker_close_terminates_retained_tcp_handles_and_releases_capacity() {
+    use tokio::io::AsyncReadExt;
+    let fixture = Fixture::new().await;
+    let tcp = TcpFixture::new().await;
+    let broker = Broker::new(tcp.configuration(&fixture)).unwrap();
+    let session = broker.create_session(tcp_options()).unwrap();
+    let connected_request = open();
+    let connected = admitted(&session, connected_request.clone())
+        .connect()
+        .await
+        .unwrap();
+    let (mut peer, _) = tcp.listener.accept().await.unwrap();
+    connected.opened().unwrap();
+    let pending_request = open();
+    let pending = admitted(&session, pending_request.clone());
+    let active_state = session
+        .tcp_operation(&connected_request.request_id)
+        .unwrap()
+        .unwrap();
+    let pending_state = session
+        .tcp_operation(&pending_request.request_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(session.core.active.available_permits(), 7);
+    broker.close().unwrap();
+    assert!(
+        connected.opened().is_err(),
+        "closure kept a TCP connection live"
+    );
+    assert_eq!(
+        active_state.status().unwrap().state,
+        OperationState::OutcomeUnknown
+    );
+    assert_eq!(
+        pending_state.status().unwrap().state,
+        OperationState::Cancelled
+    );
+    let terminal = match pending.connect().await {
+        Ok(_) => panic!("closed pending TCP operation connected"),
+        Err(terminal) => terminal,
+    };
+    assert_eq!(terminal.cause, Cause::SessionEnded);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), peer.read(&mut [0; 1]))
+            .await
+            .unwrap()
+            .unwrap(),
+        0
+    );
+    assert_eq!(session.core.active.available_permits(), 8);
+    assert_eq!(session.core.tcp_pending.available_permits(), 16);
+    assert_eq!(broker.host.tcp_pending.available_permits(), 128);
+    assert_eq!(broker.host.tcp_active.available_permits(), 64);
+    assert_eq!(broker.host.tcp_payload.available_permits(), 8 * 1024 * 1024);
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 0);
+}
+
 struct NoStoreCalls(Arc<AtomicUsize>);
 impl NoStoreCalls {
     fn unavailable<T: Send>(&self) -> BoxFuture<'_, aap_secrets::Result<T>> {

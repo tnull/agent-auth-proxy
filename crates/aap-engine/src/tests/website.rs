@@ -4,6 +4,69 @@ use aap_types::profile::LoginEncoding;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+#[tokio::test]
+async fn broker_close_invalidates_authenticated_cookie_and_placeholder_state() {
+    for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let broker = Broker::new(website_configuration(&fixture, encoding).await).unwrap();
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        session
+            .execute(request(
+                &fixture,
+                &login,
+                "POST",
+                "/session",
+                &login_body(&login, &csrf, encoding),
+            ))
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        session
+            .execute(request(&fixture, &login, "GET", "/protected", b""))
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        assert_eq!(
+            context.state.lock().unwrap().status,
+            AuthState::Authenticated
+        );
+        broker.close().unwrap();
+        {
+            let mut state = context.state.lock().unwrap();
+            assert_eq!(
+                state.status,
+                AuthState::Revoked,
+                "closure kept private cookies usable"
+            );
+            assert!(state.values.is_none());
+            assert!(state.csrf.is_none());
+            assert!(
+                !state
+                    .jar
+                    .has_all(&["session".into()], std::time::SystemTime::now())
+                    .unwrap()
+            );
+        }
+        assert!(context.cancelled.is_cancelled());
+        assert!(
+            matches!(session.clone().execute(request(&fixture, &login, "GET", "/protected", b""))
+            .await, Err(error) if error.code == ErrorCode::SessionInvalid)
+        );
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 1);
+    }
+}
+
 fn website_origin(encoding: LoginEncoding, successful: bool) -> impl Future<Output = Origin> {
     website_origin_redirect(encoding, successful, 200, None)
 }

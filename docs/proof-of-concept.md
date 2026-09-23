@@ -1453,3 +1453,49 @@ approval, native unlock behavior, cookie-backed approval parity, the complete
 shared failure matrix, remote MCP/TCP reuse, or broker-wide shutdown. Backend
 conformance, operational recovery, remaining observation/confinement cases,
 and native Keychain delivery remain part of the full proof of concept.
+
+## Broker-wide admission closure
+
+`Broker::close()` now irreversibly closes session admission and revokes all
+currently live sessions. Session publication and the closure snapshot share
+one ordering boundary; retained clones observe the same closed authority.
+`is_closed()` reports this admission state, not successful resource drain.
+Closure notifies every session before attempting local cleanup, continues
+across cleanup errors, and stays closed after a poisoned registry or session
+lock. Repeated/concurrent closure is supported without locking shared stores.
+
+The daemon's signal shutdown uses this same public operation before dropping
+its session/observer attachments. The independent embedded consumer exercises
+closure through public APIs, retaining its original per-session revocation
+checks and separately verifying rejection of live clones and new admission.
+No runtime dependency, agent wire method, or credential-bearing client API was
+added. Configuration reload remains a separately owned generation lifecycle.
+
+Eight new engine tests failed against the no-op closure stub, then passed with
+the implementation. They cover every session entry point, sixteen rounds of
+concurrent creators/closers, pending approval with zero resolution/dispatch,
+late decisions, stable completed outcomes, uncertainty after origin receipt,
+polled response cancellation, poisoned cleanup, and independent brokers sharing
+the actual SQLCipher store. Form/JSON positive login controls precede cookie
+and placeholder invalidation; JSON/SSE MCP handshakes precede closed-context
+reuse and retained initialization-response rejection. A real retained TCP
+connection closes at the peer and returns its capacity, while a retained
+pending handle terminates without becoming connected.
+
+The embedded consumer's initial closure check also failed against the stub.
+Its two tests pass on Rust 1.95.0 and 1.88.0, including both login encodings.
+Root all-target checks, 284 unit tests, nineteen ordinary daemon process tests,
+and the compile-fail doctest pass on both compilers. Root/embedded formatting,
+warning-free Clippy, and warning-free public documentation pass on 1.95.0.
+The unchanged independent client/custom-adapter tests and six opt-in confinement
+tests were not rerun in this delivery; their preceding evidence is separate.
+
+This establishes the initial closure cases L1/L2/L7 and partial context/stream
+evidence from the [lifecycle contract](../plan/lifecycle.md), not complete
+W4/W8 shutdown. A retained unpolled HTTP body can still own its connection
+driver; the host must drive cancellation or drop it. No aggregate task/socket
+drain result, native-call completion guarantee, or complete dispatch-commit
+race proof is introduced here. Deterministic late native results, late private
+state writeback, all-adapter drain/deadline/failure handling, reload retirement,
+and shared daemon/embedded lifecycle parity remain required. Operational store
+recovery, native Keychain, and the other open proof-of-concept gates also remain.

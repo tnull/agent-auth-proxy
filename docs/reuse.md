@@ -73,5 +73,10 @@ receipts cannot advance a timed-out cursor. These are in-process adapter
 checks, not shared daemon/embedded failure-matrix evidence.
 Shared failure/rotation scenarios, cookie-backed approval, remote MCP/TCP,
 cross-adapter limits, and full shutdown conformance remain required.
-The engine currently exposes per-session revocation, not a complete broker-wide
-shutdown operation; this example does not claim to close that lifecycle gap.
+The engine now exposes `Broker::close()` for irreversible admission closure and
+revocation of every live session. The embedded example uses it and verifies
+that retained clones and new session admission are denied; this is not proof
+of complete shutdown. Hosts must still stop their listeners, drop/drive held
+responses, and cancel/join owned work within a deadline. Native work may remain
+outstanding. See [engine ownership](../crates/aap-engine/README.md#broker-wide-authority-closure)
+and the remaining [lifecycle cases](../plan/lifecycle.md).

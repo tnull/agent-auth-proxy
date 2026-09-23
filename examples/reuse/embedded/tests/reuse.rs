@@ -76,6 +76,20 @@ async fn external_sqlcipher_host_runs_the_shared_scenarios_without_a_daemon() {
                 matches!(session.search_items(aap_types::SearchItems{uri:format!("{}/login",fixture.origin.origin()),query:None,cursor:None}).await,Err(error) if error.code==ErrorCode::SessionInvalid)
             );
         }
+        // Keep per-session revocation evidence above. Broker closure must also
+        // invalidate a still-live handle and prevent future admission.
+        let live = host.broker.create_session(options()).unwrap();
+        let retained = live.clone();
+        host.broker.close().unwrap();
+        assert!(host.broker.is_closed());
+        host.broker.close().unwrap();
+        assert!(matches!(host.broker.create_session(options()),
+            Err(error) if error.code == ErrorCode::SessionInvalid));
+        for session in [live, retained] {
+            assert!(
+                matches!(session.search_items(aap_types::SearchItems{uri:format!("{}/login",fixture.origin.origin()),query:None,cursor:None}).await,Err(error) if error.code==ErrorCode::SessionInvalid)
+            );
+        }
         assert_eq!(fixture.origin.requests.lock().unwrap().len(), 10);
     }
 }

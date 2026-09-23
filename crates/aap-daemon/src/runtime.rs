@@ -162,12 +162,10 @@ impl Control {
     }
     fn shutdown(&self) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+        let closed = state.broker.close();
         state.observers.clear();
-        for attachment in state.sessions.values() {
-            state.broker.revoke(&attachment.session)?;
-        }
         state.sessions.clear();
-        Ok(())
+        closed
     }
     async fn reload(&self) -> Result<u64> {
         let _exclusive = self

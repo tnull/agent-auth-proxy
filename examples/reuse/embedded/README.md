@@ -9,8 +9,9 @@ The host and its injected components are trusted and must remain outside the
 agent sandbox. Only session-scoped services go to the shared application code.
 The integration test provisions synthetic credentials in a fresh private store
 and runs the same provider/form/JSON scenarios as the external client example,
-then revokes its retained session handles. Store creation is explicit trusted
-test setup; `Host::open` must not create a replacement or plaintext fallback.
+then closes the broker and rejects retained handles and new sessions. Store
+creation is explicit trusted test setup; `Host::open` must not create a
+replacement or plaintext fallback.
 
 SQLCipher needs a C compiler, `pkg-config`, and OpenSSL development libraries.
 Run with a fresh `CARGO_TARGET_DIR` under `/tmp` and, when necessary, a safe
@@ -20,6 +21,9 @@ See [the common commands](../README.md#run-both-consumers).
 
 The tests also reject wrong keys and missing stores without creating a
 replacement, and demonstrate that retained session clones reject work after
-revocation. This example does not supply a complete host shutdown coordinator;
-production hosts still own admission shutdown, revocation of every retained
-session, and bounded cleanup of their own listeners and tasks.
+broker closure, including repeated closure calls. `Broker::close()` does not
+lock the store or prove that all resources drained. This example does not
+supply a complete host shutdown coordinator: production hosts still stop their
+listeners, cancel/drop owned executions and response bodies, and join tasks
+within a finite deadline. In-flight native work requires explicit accounting;
+an unpolled response must not be mistaken for a stopped connection.

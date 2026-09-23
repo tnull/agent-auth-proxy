@@ -8,6 +8,34 @@ mod cancellation;
 mod cleanup;
 mod controls;
 
+#[tokio::test]
+async fn broker_close_rejects_remote_mcp_reuse_and_pending_initialization_delivery() {
+    for sse in [false, true] {
+        let fixture = fixture(sse, false).await;
+        let broker = Broker::new(configuration(&fixture)).unwrap();
+        let ready = broker.create_session(options()).unwrap();
+        handshake(&fixture, &ready).await;
+        response_json(ready.execute(request(&fixture, call())).await.unwrap()).await;
+        let pending = broker.create_session(options()).unwrap();
+        let response = pending
+            .execute(request(&fixture, initialize()))
+            .await
+            .unwrap();
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 4);
+        broker.close().unwrap();
+        assert!(
+            response.into_body().collect().await.is_err(),
+            "closure delivered a retained remote initialization"
+        );
+        for session in [&ready, &pending] {
+            assert!(matches!(session.execute(request(&fixture, call())).await,
+                Err(error) if error.code == ErrorCode::SessionInvalid));
+        }
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 4);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 4);
+    }
+}
+
 fn tools() -> Vec<Tool> {
     vec![Tool {
         name: "echo".into(),

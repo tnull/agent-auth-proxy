@@ -154,6 +154,14 @@ unchanged socket entries owned by that run. A persistent private `daemon.lock`
 file provides a nonblocking exclusive process lock. Readiness is discovery, not
 proof that a process is still alive; do not reuse attachments after failure.
 
+Signal shutdown now uses the engine's `Broker::close()` admission/revocation
+operation before removing session and observer attachments. A cleanup error
+does not skip removal of the other attachments. This closes broker authority,
+not the complete [bounded-drain acceptance gate](../plan/lifecycle.md): joining
+all attachment/transport work and accounting for non-interruptible native calls
+under one aggregate deadline remain required. The existing listener join wait
+alone must not be described as that guarantee.
+
 After abrupt termination the kernel releases the lock, but old socket entries
 and readiness metadata can remain. Restart uses fresh epoch-qualified sockets
 and overwrites readiness atomically. It does not unlink unknown stale entries

@@ -229,6 +229,7 @@ fn options() -> SessionOptions {
     }
 }
 
+mod lifecycle;
 mod observation;
 mod proxy;
 mod remote_mcp;
