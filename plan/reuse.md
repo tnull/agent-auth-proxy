@@ -89,6 +89,11 @@ and closes live streams within the declared deadline. It does not claim to undo
 remote effects or erase every memory copy. All clones of revoked handles must
 reject further work, including clones retained by HTTP and MCP adapters.
 
+The [broker lifecycle contract](lifecycle.md) separates irreversible authority
+closure from confirmed resource drain. It defines concurrent admission,
+dispatch/native-call races, held response bodies, shared-store ownership, and
+the shutdown acceptance cases. Delivering closure alone does not close W8.
+
 ## Shared behavioral suite
 
 Define scenario inputs and expected security outcomes once, then run them

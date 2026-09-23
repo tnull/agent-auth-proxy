@@ -223,6 +223,11 @@ consumers to infer success from an EOF. Libraries use the caller's Tokio runtime
 and return lifecycle handles; they do not install process-global logging,
 signal handlers, environment variables, trust roots, or a nested runtime.
 
+Keep broker-wide closure and resource-drain reporting on the trusted-host API,
+not `AgentService`. The [lifecycle contract](lifecycle.md) defines the ownership
+and race requirements without selecting signatures or another crate. A shared
+store is not implicitly locked when one of its consuming brokers closes.
+
 ## Rust and dependency policy
 
 Keep direct dependencies minimal and review their transitive/native cost.

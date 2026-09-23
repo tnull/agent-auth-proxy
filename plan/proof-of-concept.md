@@ -91,12 +91,17 @@ Zero must not mean unlimited, and chunking cannot bypass total-byte limits.
 | TCP phase deadlines | 10-second local handshake, up to 5-minute approval, 10-second preparation/dial, up to 10-minute connected lifetime, 2-second terminal delivery; always capped by authority expiry |
 | Catalog input | 1 MiB and 1,000 enrolled items |
 | Observation retained content | 8 MiB per session and 64 MiB globally; bounded event count as well |
+| Host shutdown | 2-second aggregate cooperative cleanup budget; non-interruptible work and timeout are reported, not counted as drained |
 
 Limit checks cover encoded and decoded data where relevant, headers, nesting,
 cookie counts/sizes, certificate caches, and global session/listener counts.
 Record remaining precise parser/connection defaults with the owning adapter;
 no unbounded collection may hide behind an unspecified default. Exceeding a
 bound yields a safe error or explicit incomplete stream, never silent success.
+
+The [shutdown contract](lifecycle.md) distinguishes authority closure from
+resource drain and applies one deadline across all cleanup phases. This budget
+does not claim that native backend calls can be forcibly terminated.
 
 ## Delivery order and demonstration gates
 

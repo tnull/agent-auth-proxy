@@ -197,6 +197,12 @@ drains only within a configured deadline, emits incomplete stream outcomes,
 and invalidates session state. It never reports uncertain upstream work as
 rolled back or successful.
 
+Follow the [broker lifecycle contract](lifecycle.md) for irreversible admission
+closure, safe late native results, and host/adapter cleanup ownership. Establish
+closure separately from bounded drain; the latter needs task/socket evidence,
+including retained unpolled responses and cleanup failure. Do not mark W4/W8
+shutdown complete merely because session revocation succeeds.
+
 ## W5–W6: password-manager vertical slice
 
 Implement `vault.search_items`, `vault.get_login`, `vault.auth_status`, and
