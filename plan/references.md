@@ -107,3 +107,9 @@ SQLite, Apple's Keychain services/item/access-control documentation for native
 custody and reuse limitations, and `security-framework` documentation for direct
 Rust access. Backend selection is a project decision: Keychain holds the
 credential items on macOS, while encrypted SQLite is the non-macOS default.
+
+The [operator lifecycle](operations.md) additionally uses the
+[SQLCipher API](https://www.zetetic.net/sqlcipher/sqlcipher-api/) documentation
+(checked 2026-09-23) for keyed-open verification and explicit schema-version
+preservation during export. Offline maintenance, operator separation, and
+recovery acceptance gates are project requirements, not SQLCipher guarantees.

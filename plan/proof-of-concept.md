@@ -137,6 +137,9 @@ still establish narrower behavior but cannot establish complete interception.
 The handoff includes exact supported profiles/transports, runnable synthetic
 demonstrations, format/build/test results, dependency-boundary checks, operator
 setup/recovery instructions, and an explicit list of unverified claims.
+Apply the [operator lifecycle acceptance gates](operations.md#acceptance-and-delivery)
+to the custody and recovery portions of that handoff; do not equate a low-level
+backup function with a verified end-to-end restore workflow.
 Remaining choices should not be answered by weakening the security contract:
 
 - Product naming and distribution license before publishing.

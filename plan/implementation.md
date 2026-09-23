@@ -135,6 +135,13 @@ key outside the database and normal configuration. Test the native SQLCipher
 build so missing encryption support cannot silently become plaintext SQLite.
 Do not add an ORM or general storage abstraction beyond the small store interface.
 
+Follow [the operator lifecycle](operations.md) for initialization, enrollment,
+managed mutation, and recovery. Keep store-management authority separate from
+agent and approver APIs. The first daemon maintenance workflow is offline;
+backup/rekey methods alone do not prove exclusive access, interrupted recovery,
+or safe reuse of current policy after restore. W2 covers backend correctness,
+W4 covers operator separation/invalidation, and W8 covers the recovery rehearsal.
+
 ## W3–W4: complete mediation and a thin daemon
 
 Implement verified upstream TLS, explicit destination resolution/admission,

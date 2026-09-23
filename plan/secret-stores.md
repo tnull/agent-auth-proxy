@@ -158,6 +158,12 @@ the proxy; recovery uses operator-held keys and encrypted backups. Database
 encryption alone does not detect restoring an older valid database snapshot or
 protect an already compromised unlocked host.
 
+The [operator lifecycle and recovery contract](operations.md) narrows the first
+daemon's maintenance workflow to offline operation. It specifies verification
+before publication, separate backup-key custody, current-policy review on
+restore, and fault-injection gates. These are product-level requirements beyond
+the existence of individual backend backup/rekey methods.
+
 ## macOS default: direct Keychain storage and reuse
 
 `aap-store-keychain` stores passwords, provider keys, and other supported persistent

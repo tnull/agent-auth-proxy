@@ -1,6 +1,6 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.7. Updated on 2026-09-23.
+Status: proposed design, version 0.8. Updated on 2026-09-23.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
@@ -25,6 +25,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Local TCP binding](tcp-binding.md) | Session-socket upgrade, binary frames, half-close, terminal outcomes, and control-capacity requirements |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
 | [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
+| [Operator lifecycle](operations.md) | Enrollment, management authority, invalidation, offline maintenance, backup/restore, and recovery gates |
 | [Approval](approval.md) | Async human-in-the-loop interface, policy composition, immutable decisions, and fail-closed behavior |
 | [Authentication](authentication.md) | Fake passwords, form substitution, private cookies, and API credentials |
 | [Observability](observability.md) | Stream events, redaction, ordering, backpressure, and consumer isolation |
@@ -90,6 +91,7 @@ recipient cannot be eliminated by response filtering.
 | Observation | Redacted logical streams by default; bounded export, explicit loss semantics, no detector built into this scope |
 | Human interaction | Async engine approval interface, restrictive global/session/item/action policy, and immutable decisions; production UI/signing follow later |
 | Catalog | Private versioned JSON separate from credentials; paired configuration revisions and atomic in-memory reload |
+| Maintenance | Explicit trusted administration; first SQLite backup/restore/migration/key-rotation workflow is offline, with verified encrypted recovery copies |
 
 ## Scope and limits
 

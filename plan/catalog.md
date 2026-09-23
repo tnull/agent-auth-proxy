@@ -149,6 +149,11 @@ dispatch. Do not mutate a queued operation into different work. Native item
 rotation is detected through the store contract, independently of catalog
 reload. Unenrollment removes the binding, never the existing Keychain item.
 
+The [operator lifecycle](operations.md) defines partial enrollment failures,
+the distinction between unenrollment and native deletion, and recovery without
+silently restoring old grants. Catalog publication and native item mutations
+are separate transactions; neither may imply success of the other.
+
 ## Acceptance checks
 
 - Parse the example, reject unknown versions/members and duplicate JSON keys,
