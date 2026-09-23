@@ -190,6 +190,10 @@ session. Provider-reported token usage is evidence, not the sole resource limit.
 
 ## Threat model and limits
 
+The [security review](security-review.md) maps the following assumptions and
+limits to concrete adversarial cases, evidence records, and release decisions.
+It does not equate a successful login with safe use or complete interception.
+
 Assume malicious agent requests, prompt injection, token/placeholder theft from
 the sandbox, DNS rebinding, hostile redirects, conflicting parsers, malicious
 tool metadata, replay, consumer outages, and racing requests. Defend against

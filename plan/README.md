@@ -1,6 +1,6 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.8. Updated on 2026-09-23.
+Status: proposed design, version 0.9. Updated on 2026-09-23.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
@@ -16,6 +16,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | Document | Purpose |
 | --- | --- |
 | [Architecture](architecture.md) | Trust boundaries, interception coverage, routing, and credential custody |
+| [Security review](security-review.md) | Assets, adversarial scenarios, replay distinctions, and evidence required for scoped security claims |
 | [Deployment and confinement](deployment.md) | Trusted launcher boundary, Linux sandbox requirements, attachment lifecycle, and bypass acceptance suite |
 | [Common protocol](protocol-common.md) | Agent identity, authorization, request lifecycle, and local contracts |
 | [Password manager](password-manager.md) | Secret-store custody, site/item discovery, and MCP fake-credential issuance |
@@ -148,6 +149,9 @@ Each capability needs both positive and negative acceptance scenarios in its
 specification. Regression tests must be demonstrated to fail on the pre-fix
 code as well as pass on the fix. Planning documents define requirements;
 unchecked implementation milestones are not evidence of working behavior.
+Use the [security review matrix](security-review.md#adversarial-review-matrix)
+to connect these milestones to adversarial evidence. Its closure rules keep
+credential isolation, authorized use, and confinement/inspection claims separate.
 
 ## Proposed baseline and remaining deployment decisions
 

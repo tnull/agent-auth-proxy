@@ -306,6 +306,12 @@ verified sandbox/egress boundary; passing store tests alone is insufficient.
 
 ## Verification and CI
 
+Apply the [security review matrix](security-review.md#adversarial-review-matrix)
+alongside the package milestones. Record scenario-level evidence for each
+advertised profile/deployment; do not promote a component test, skipped native
+test, or unsupported adapter into a broader security claim. The matrix adds
+cross-cutting review cases, not another crate or authentication scheme.
+
 Favor behavior at trust boundaries over tests that repeat internal structures.
 Use synthetic secrets and loopback fixture services; ordinary tests need no live
 accounts, paid model calls, or unlocked personal vault. Test actual store adapters
