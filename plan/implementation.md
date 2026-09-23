@@ -63,10 +63,13 @@ W4 and its authenticated website checks require W6. It need not wait for W8.
 
 ## W0: workspace and Git management
 
-Keep one repository and one root lockfile. Add the library/package boundaries
-listed in the workspace design as they receive their initial contracts; omit
-the native store adapter from workspace members until its milestone. A scaffold
-must not claim unimplemented listeners or security guarantees are functional.
+Keep one repository and one root lockfile for the production workspace. The
+independent W8 acceptance consumers have their own explicit manifests and
+committed lockfiles so their builds cannot rely on workspace feature unification.
+Add the library/package boundaries listed in the workspace design as they
+receive their initial contracts; omit the native store adapter from workspace
+members until its milestone. A scaffold must not claim unimplemented listeners
+or security guarantees are functional.
 
 Use a root virtual manifest with explicit members and shared metadata, lints,
 dependency requirements, and release profiles. Record the MSRV, pinned toolchain,
@@ -275,8 +278,10 @@ leaks, and accidental workspace-only assumptions are detectable.
 
 The [reuse acceptance plan](reuse.md) specifies the three consumer fixtures,
 host/engine lifecycle ownership, shared scenario matrix, independent dependency
-checks, and ordered W8 delivery. Start its provider/website examples before W7
-finishes, then include remote MCP and TCP before closing the reuse milestone.
+checks, and ordered W8 delivery. Its [first provider/website slice](reuse.md#first-providerwebsite-delivery)
+separates credential-free scenarios from trusted orchestration and names the
+initial acceptance cases. Start these examples before W7 finishes, then include
+remote MCP and TCP before closing the reuse milestone.
 Compilation alone is insufficient, and successful embedding does not establish
 the separate OS-confinement guarantee.
 

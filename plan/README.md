@@ -32,7 +32,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Authentication](authentication.md) | Fake passwords, form substitution, private cookies, and API credentials |
 | [Observability](observability.md) | Stream events, redaction, ordering, backpressure, and consumer isolation |
 | [Rust workspace](rust-workspace.md) | Reusable crate boundaries, minimal dependencies, daemon and embedding APIs |
-| [Reuse and integration](reuse.md) | Independent consumers, trusted-host responsibilities, shared behavioral tests, and dependency-isolation gates |
+| [Reuse and integration](reuse.md) | Independent consumers, trusted-host responsibilities, first-slice acceptance cases, shared behavioral tests, and dependency-isolation gates |
 | [Implementation](implementation.md) | Git/Cargo setup, ordered work packages, security checks, and release gates |
 | [First proof of concept](proof-of-concept.md) | Proposed initial coverage, finite limits, demonstration gates, and explicit exclusions |
 | [Sources and integration findings](references.md) | Standards assessment and evidence from Loupe and Goose |

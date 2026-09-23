@@ -135,6 +135,64 @@ operation, then attempt cross-use. Examine request counts and sanitized records,
 not just an error returned to the caller. A regression test must also fail on
 the pre-fix code with the expected assertion.
 
+## First provider/website delivery
+
+Narrow the first W8 change to two independent consumers and a shared scenario
+driver. This establishes a useful integration baseline without claiming that
+the entire matrix above is complete. Repeat it with form and JSON login
+profiles, fresh encrypted stores, and two separately admitted sessions.
+
+Keep three pieces distinct:
+
+- The credential-free driver receives session-scoped service access and safe
+  fixture destinations. It issues ordinary agent operations and returns a
+  bounded report of public results, operation IDs, and terminal states.
+- The external client executable receives only pre-admitted attachments and
+  that safe input. It has no provisioning, observer, operator, or store access.
+  Launch the actual executable in the daemon test; a trusted test process that
+  calls the client library alone does not establish this program boundary.
+- Trusted orchestration creates the SQLCipher store, supplies its unlock key,
+  enrolls profiles, admits sessions, runs the HTTPS origin, and reads authorized
+  observations. Only this code knows the real synthetic credentials and private
+  cookie values. It checks the driver's report against independently recorded
+  effects; the report is not itself proof of non-disclosure or non-dispatch.
+
+The embedded consumer composes the public engine, real store, and transport in
+a caller-owned runtime. It must not start the daemon or depend on its CLI.
+Share scenario inputs and assertions, not privileged handles or a second
+implementation of authentication. Fixture-only support may be development code
+or shared source; it does not require a new published crate or framework.
+
+| Case | First-slice acceptance |
+| --- | --- |
+| R1: provider stream | The origin receives the enrolled key; the client receives bounded sanitized output; observed content and terminal records agree with the outcome |
+| R2: operation reuse | Repeating a completed ID returns retained state without dispatch; changed input conflicts; cancelling completed work does not change its outcome |
+| R3: admission | An ungranted resource and an unenrolled destination fail with no new origin receipt; first demonstrate that the allowed route works |
+| R4: website flow | Discover the enrolled item, obtain fake fields, fetch profiled CSRF metadata, submit login, and read a protected response; native values and private cookies never reach the driver |
+| R5: context isolation | Both sessions authenticate successfully, receive distinct placeholders, and use distinct private cookie jars; cross-session context use is denied |
+| R6: logout and revocation | Logging out one context prevents its reuse without breaking the other session; revoking a session also invalidates retained handle clones and its existing attachment |
+| R7: interrupted delivery | After the origin records receipt, a disconnect or cancellation produces the specified uncertain/incomplete outcome; status and repeated execution never resend the operation |
+| R8: sanitized evidence | Inspect agent-visible bodies, headers, errors, and trusted observation exports for seeded secrets; check correlated complete/incomplete endings and count upstream effects independently |
+
+Case IDs label acceptance evidence, not new protocol fields. Define explicit
+expected request counts for each fixture transcript; redirects, duplicate IDs,
+status polling, and cancellation must not hide extra credential-bearing work.
+Use origin/driver barriers to establish receipt or stream progress before
+injecting cancellation. A fixed sleep is not evidence that dispatch occurred.
+Do not require a common chunk size or scheduler ordering between consumers.
+
+Two sessions using one account establish session isolation only. The later
+cross-account case still needs two enrolled accounts with distinct credentials
+and independent positive controls. Likewise, zero upstream receipts do not
+prove zero secret resolution: the host-supplied, counted-store fixture must
+separately verify the pre-resolution policy and approval boundary.
+
+After each scenario, revoke remaining sessions and stop owned work within a
+deadline. Record any missing public cancellation, revocation, or shutdown
+contract as follow-up W8 work; do not give the example private engine access
+to simulate a supported lifecycle. This first delivery does not close approval,
+rotation, shared quotas, remote MCP/TCP, full shutdown, or confinement gates.
+
 ## Independent builds and dependency checks
 
 Build the consumers outside the root Cargo workspace, without inherited
@@ -143,6 +201,13 @@ An isolated local Git checkout at an exact commit can supply package sources;
 publishing or contacting a registry with new packages is unnecessary. Document
 the tested revision and lockfile. A future external Git dependency pins a
 revision, not a moving branch.
+
+Each acceptance consumer has its own explicit manifest and committed lockfile;
+the production workspace retains its root lockfile. Local path dependencies
+may refer to the checkout, but consumer manifests must not inherit root
+workspace dependencies. Run minimal normal builds separately from tests so
+development dependencies and test-only features cannot mask missing exports
+or feature declarations. Verify the resolved workspace root for each consumer.
 
 Check resolved normal/build dependency closures, not only direct manifests:
 
@@ -165,10 +230,18 @@ do not silently switch to plaintext SQLite or a different credential store.
 Using the external daemon remains a supported way to avoid native linkage
 inside the host application.
 
+Run these checks for the pinned compiler and declared MSRV. Evidence must name
+the consumer manifest, lockfile, feature set, source revision, and commands.
+Record formatting, normal compilation, tests, and dependency-boundary results
+separately. A passing root-workspace test run does not cover independent
+consumers, and adding CI jobs does not establish that remote CI has passed.
+
 ## Ordered W8 delivery and exit gate
 
 1. Add the independent client and embedded SQLCipher fixtures for the existing
-   provider/website paths; identify any missing public lifecycle contracts.
+   provider/website paths using [R1–R8](#first-providerwebsite-delivery); identify
+   any missing public lifecycle contracts. Record each case on both paths and
+   for both login encodings, marking unsupported or unrun variants explicitly.
 2. Add the host-supplied adapter fixture, dependency closure checks, and shared
    approval/store/observation failure scenarios.
 3. Extend the shared suite with remote MCP and the completed TCP path as their
