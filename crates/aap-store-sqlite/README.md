@@ -31,11 +31,28 @@ An incomplete new backup file is not advertised as successful and is not
 silently overwritten on retry. Schema version 1 is the initial format; foreign
 or newer versions are rejected before persistent configuration changes.
 
-Ten backend tests cover actual encrypted database/WAL files, restart, wrong
+Eleven backend tests cover actual encrypted database/WAL files, restart, wrong
 keys, no plaintext fallback, coherent updates and rollback, locking, deletion,
-backup, key rotation/recovery, unsafe file changes, and unknown schema refusal.
+backup, key rotation/recovery, unsafe file changes, unknown schema refusal,
+and native worker ownership after caller cancellation.
 Synthetic wrong-key tests produce SQLCipher's native page-decryption diagnostics;
 the adapter exposes only fixed error categories, never those diagnostics.
+
+The adapter admits at most eight native jobs per store, including jobs queued
+behind its connection lock. A dropped async caller does not release that job's
+reservation: the worker retains it until completion. At saturation, even a
+request to lock the store returns `Unavailable`; it does not report that the
+store is already locked or drained. An admitted lock call is native work too
+and may finish after its caller stops waiting. Coordinate it only when the
+host owns the backend lifecycle, not to shut down one user of a shared store.
+
+A deterministic conformance test pauses a real SQLCipher worker after reading
+a synthetic value, abandons its caller and seven queued callers, and verifies
+that capacity stays occupied. Releasing the worker disposes of its late result
+and restores capacity without changing the credential lease. This verifies
+existing worker ownership, not forced interruption, secret-memory erasure, or
+a complete broker/daemon drain API. Only tests enable Tokio's timer feature for
+bounded fixture waits; no normal dependency or store interface changes.
 
 This package is still part of an unfinished proof of concept. Process-crash
 fault tests, future schema-upgrade handling, shared cross-backend conformance,

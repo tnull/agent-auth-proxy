@@ -597,6 +597,130 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancelled_callers_keep_native_work_bounded_until_completion() {
+        use std::{future::poll_fn, task::Poll};
+        use tokio::{sync::oneshot, time::timeout};
+
+        // The result owns actual synthetic SQLCipher data. Its drop signal
+        // establishes disposal of an abandoned result, not memory zeroization.
+        struct LateValue {
+            _secret: SecretBytes,
+            dropped: Option<oneshot::Sender<()>>,
+        }
+        impl Drop for LateValue {
+            fn drop(&mut self) {
+                if let Some(dropped) = self.dropped.take() {
+                    let _ = dropped.send(());
+                }
+            }
+        }
+
+        let fixture = Fixture::new();
+        let store = fixture.open(OpenMode::Create, 17).await.unwrap();
+        let item = ItemRef::new("synthetic-item".into()).unwrap();
+        let metadata = store.put(&item, fields(PASSWORD), None).await.unwrap();
+        let snapshot = store.resolve(&item, &metadata.lease).await.unwrap();
+        assert_eq!(snapshot.field(Field::Password).unwrap().expose(), PASSWORD);
+        drop(snapshot);
+        assert_eq!(store.budget.available_permits(), 8);
+
+        let (entered, reached) = oneshot::channel();
+        let (release, wait_release) = std::sync::mpsc::channel();
+        let (dropped, result_disposed) = oneshot::channel();
+        let mut native = Box::pin(store.run(move |state| {
+            let connection = state.connection.as_ref().ok_or(StoreError::Locked)?;
+            let value: Vec<u8> = connection.query_row(
+                "SELECT value FROM fields WHERE item_id = 'synthetic-item' AND kind = 'password'",
+                [], |row| row.get(0),
+            ).map_err(db_error)?;
+            let result = LateValue {
+                _secret: SecretBytes::new(value)?,
+                dropped: Some(dropped),
+            };
+            entered.send(()).map_err(|_| StoreError::Unavailable)?;
+            wait_release
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| StoreError::Unavailable)?;
+            Ok(result)
+        }));
+        poll_fn(|cx| {
+            assert!(native.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        timeout(Duration::from_secs(2), reached)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.budget.available_permits(), 7);
+        drop(native);
+        assert_eq!(
+            store.budget.available_permits(),
+            7,
+            "dropping the caller released a still-running native reservation"
+        );
+
+        // The first worker holds State while paused. Other admitted workers
+        // cannot finish until release; dropping their callers must not admit
+        // an unbounded replacement queue into the native runtime.
+        let mut queued = vec![];
+        for _ in 0..7 {
+            let mut call = store.status();
+            poll_fn(|cx| {
+                assert!(call.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+            queued.push(call);
+        }
+        assert_eq!(store.budget.available_permits(), 0);
+        drop(queued);
+        assert_eq!(
+            store.budget.available_permits(),
+            0,
+            "abandoned queued native calls lost their reservations"
+        );
+        assert!(matches!(
+            store.resolve(&item, &metadata.lease).await,
+            Err(StoreError::Unavailable)
+        ));
+        assert!(
+            matches!(store.lock().await, Err(StoreError::Unavailable)),
+            "a saturated backend reported successful locking"
+        );
+
+        release.send(()).unwrap();
+        timeout(Duration::from_secs(2), result_disposed)
+            .await
+            .unwrap()
+            .unwrap();
+        let all_slots = timeout(
+            Duration::from_secs(2),
+            store.budget.clone().acquire_many_owned(8),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(all_slots);
+        assert_eq!(store.budget.available_permits(), 8);
+        assert_eq!(
+            store.status().await.unwrap().availability,
+            Availability::Ready
+        );
+        assert_eq!(
+            store
+                .resolve(&item, &metadata.lease)
+                .await
+                .unwrap()
+                .field(Field::Password)
+                .unwrap()
+                .expose(),
+            PASSWORD
+        );
+        fixture.check_encrypted_files();
+    }
+
+    #[tokio::test]
     async fn credentials_round_trip_with_encrypted_wal_and_restart() {
         let fixture = Fixture::new();
         let store = fixture

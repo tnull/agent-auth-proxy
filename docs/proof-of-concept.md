@@ -1531,3 +1531,27 @@ Clippy, and public documentation pass on 1.95.0. Independent consumer and opt-in
 confinement tests were not rerun in this correction. No dependency or public
 API was added. Broader dispatch/writeback ordering, native-work accounting, and
 aggregate resource drain remain open; this is not the complete L3/L4 contract.
+
+## SQLite native work after caller cancellation
+
+A new backend conformance test uses the actual SQLCipher connection and native
+worker path, pausing a worker after it reads a synthetic credential. Dropping
+that caller and seven other admitted callers does not free their eight native
+reservations. A further lookup and a request to lock the store both report
+`Unavailable`, rather than admitting more native jobs or claiming a locked
+backend. Explicitly releasing the worker disposes of its abandoned result;
+all capacity returns and the original credential lease still resolves.
+
+The fixture uses explicit entry/release/disposal barriers and finite waits,
+not sleeps to infer native progress. It checks encrypted backing files before
+teardown. This is additional evidence for existing worker ownership, not a
+regression fix or a claim that cancellation interrupts native work. No production
+store code changed. Tokio's timer feature is added only to this crate's test
+dependencies so isolated tests do not rely on workspace feature unification.
+
+The isolated backend test and the full workspace pass on Rust 1.95.0 and 1.88.0:
+290 unit tests, nineteen ordinary process tests, and the compile-fail doctest.
+All-target checks pass on both; formatting, warning-free Clippy, and public docs
+pass on 1.95.0. Independent consumers and opt-in confinement tests were not
+rerun. Broker-wide native-job accounting, bounded daemon/store shutdown, and
+operational recovery remain open; a cancelled caller alone is not a drain result.
