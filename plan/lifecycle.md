@@ -77,6 +77,66 @@ dispatch remains non-dispatched; possibly dispatched work follows the common
 period required by the common protocol, until session teardown; cleanup cannot
 make an old ID reusable through a revoked session.
 
+## Completion and private-state publication
+
+Receiving an upstream success is not the same as completing a local operation.
+The engine must finish the profile's response validation and redaction, accept
+required ending records, and establish that the operation still has authority
+before publishing success or reusable authentication state. This is a local
+consistency boundary, not a transaction with the upstream resource or collector.
+
+Treat response-derived cookies, CSRF mappings, and upstream MCP session tokens
+as provisional until that boundary. They may be used internally to sanitize the
+same response and prepare an explicitly permitted redirect within the same
+exchange, but other operations cannot use them. Every redirect still requires
+its own destination, dispatch, and observation checks. Provisional state counts
+toward the same finite context/buffer budgets as committed state.
+
+Completion has one ordering point with session/broker revocation and generation
+retirement. Recheck operation cancellation, expiry, policy/context generation,
+and the store validity required by the backend contract. A prior check before
+response parsing or an observation wait is insufficient. Backend revalidation
+may happen before this boundary; do not claim atomic exclusion of an external
+Keychain edit that the backend cannot provide.
+
+| Ordering | Required local result |
+| --- | --- |
+| Completion wins | Publish the validated context transition and terminal operation state consistently; later revocation invalidates the context but does not rewrite the completed operation |
+| Revocation/cancellation wins | Discard provisional state; never publish a successful ending or usable context; retain the appropriate cancelled or uncertain outcome |
+| Required recording cannot accept completion | Do not publish successful completion or reusable state; stop delivery and report an incomplete outcome without retrying upstream work |
+| Best-effort recording loses completion | A valid completion may still commit; report observation loss under the existing gap contract, never invent collector acceptance |
+
+Publishing a successful ending must not precede committing the corresponding
+operation/context transition. Conversely, accepted required recording must be
+secured before committing that transition. Capacity checks or reservation may
+precede the short authority commitment, but no approval callback, native store
+call, network delivery, or collector wait may run while holding its exclusion
+boundary. Reservations must be bounded and released on rejection/cancellation.
+This specifies behavior without choosing a Rust signature or locking primitive.
+
+For a bounded group of ending records, failed completion must not leave some
+views reporting success while others report cancellation. Abandoning a proposed
+success batch must not evict previously accepted records or manufacture a gap
+for records never committed. Genuine best-effort drops and required-recording
+failures retain their existing explicit loss semantics. If even an incomplete
+ending cannot be recorded, report recording loss; do not replace it with a
+successful ending to make the stream look closed.
+
+The boundary also applies to local-only operations that publish placeholders or
+advance protocol state. They need no invented upstream dispatch: cancellation
+before publication remains non-dispatched. Invalidation is different from
+creation of authority. Logout, revocation, and deletion of local context state
+must take effect even when observation is unavailable; they are never deferred
+until a success record can be delivered.
+
+An HTTP status, a final response chunk, or a completed broker operation does not
+prove the agent received or processed the response. Supported streaming may
+release already checked chunks before local completion; subsequent failure is
+an incomplete stream, not a retraction of those chunks. Dropping a body before
+completion discards its tentative authority. Dropping it after completion does
+not roll back remote effects or replay the operation. Both cases remain subject
+to the separate resource-drain requirements below.
+
 ## Resource ownership and drain contract
 
 The embedding host owns its listeners, execution tasks, response consumers,
@@ -154,6 +214,27 @@ Returning a local error is insufficient evidence that nothing was dispatched.
 | L7: ownership isolation | Two brokers sharing a store work before closure; closing one leaves the other's permitted operations and store access functional |
 | L8: partial failure | A stuck native call, blocked collector, or cleanup failure cannot keep other sessions authorized; total waiting is bounded and incomplete cleanup is reported |
 | L9: restart and reload | Fresh generations reject old handles/approvals; invalid candidate configuration does not revoke the valid generation; retirement never resurrects old authority |
+
+### L6 completion acceptance cases
+
+Use barriers immediately before the completion commitment, not only before
+network receipt. Test both possible orderings with independent positive controls
+and count upstream receipts separately from local outcomes.
+
+| Case | Required evidence |
+| --- | --- |
+| C1: website staging | Form and JSON login return sanitized data while new cookie/CSRF state remains unavailable to another exchange; successful completion alone enables the next protected request |
+| C2: late website response | Revoke the session, close the broker, or retire its generation after the response arrives but before completion; no authenticated context reappears and no protected follow-up is sent |
+| C3: late MCP handshake | Repeat for JSON and SSE initialization and initialized-notification responses; neither a private session token nor readiness becomes usable after retirement |
+| C4: recording boundary | Required capacity failure prevents successful publication; best-effort loss permits otherwise valid completion with a gap; rejected success batches preserve earlier accepted records and coherent endings |
+| C5: completion first | Complete a positive provider/login/MCP exchange, then revoke; terminal evidence remains completed, private state becomes unusable, and repeated IDs never redispatch |
+| C6: local publication | Retire authority during placeholder issuance or local protocol work; no new live binding or successful local completion escapes, and no upstream dispatch is invented |
+
+For all dispatched race cases, prove incomplete/uncertain local outcomes without
+claiming non-execution at the origin. Include response-body abandonment and
+cookie refresh/deletion failures: discarding a tentative update must not restore
+an old jar as if upstream session state had rolled back. Run the applicable
+cases through both daemon and trusted embedded paths before closing L6.
 
 First deliver broker-wide admission closure and clone revocation (L1/L2/L7),
 without advertising complete shutdown. Next prove dispatch/native-result races

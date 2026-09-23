@@ -69,8 +69,25 @@ can still reach its destination after closure returns.
 
 The admission lock covers only the authority check and operation-state mutation.
 Transport calls, observations, native work, and cancellation notifications run
-outside it. This is not an aggregate drain result or a proof of all late private
-state writeback races; those lifecycle gates remain open.
+outside it. Completion also uses that boundary: required ending records must
+fit before committing terminal state, and readers cannot see a successful ending
+before the corresponding operation/context transition commits. Recording
+preflight occurs before taking admission, so it cannot hold up revocation under
+that lock. A rejected transition preserves prior recording and cursor identities;
+actual best-effort loss still permits otherwise valid completion with a gap.
+
+Website cookie/CSRF/redaction state is owned provisionally by one exchange until
+its response completes. Cancellation or failed completion drops that state and
+invalidates the context; it does not roll back upstream effects or restore an
+old jar. Remote MCP session/readiness transitions and local protocol completions
+use the same ordered boundary. Closing after completion invalidates context
+authority without rewriting already completed work.
+
+This is not an aggregate drain result or a proof of all private-state races.
+Placeholder issuance, generation reload, backend change detection, and the full
+daemon/embedded lifecycle acceptance matrix remain separate gates. Retained
+responses may still own private buffers until the host drops/drives them; no
+claim of immediate memory erasure or remote consumer receipt follows.
 
 ## TCP admission and connection ownership
 

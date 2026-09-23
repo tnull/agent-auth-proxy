@@ -66,7 +66,7 @@ impl Operation {
         #[cfg(test)]
         session.before_dispatch(&self.request.request_id);
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
-        session.commit_dispatch(|| {
+        session.commit_authority(|| {
             if state.status.state != OperationState::Ready || self.cancelled.is_cancelled() {
                 return Err(ErrorCode::RequestConflict.into());
             }

@@ -128,6 +128,14 @@ impl Recorder {
     /// applicable required queue. Best-effort queues may independently lose the
     /// complete update. Loss consumes source and selected delivery IDs.
     pub fn record_batch(&self, events: Vec<Event>, required: bool) -> Result<()> {
+        self.record_batch_with(events, required, || Ok(()))
+    }
+    pub(super) fn record_batch_with(
+        &self,
+        events: Vec<Event>,
+        required: bool,
+        commit: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         if events.is_empty() || events.len() > 16 {
             return Err(ErrorCode::RequestInvalid.into());
         }
@@ -136,6 +144,27 @@ impl Recorder {
             .lock()
             .map_err(|_| ErrorCode::ObservationUnavailable)?;
         let first = state.next;
+        let previous_deliveries: [Option<u64>; 16] = std::array::from_fn(|index| {
+            state.subscribers[index]
+                .as_ref()
+                .map(|subscriber| subscriber.next)
+        });
+        // Preflight only advances identity counters; evictions/publication occur
+        // after the caller's commit. Undo those counters when it rejects, not
+        // when actual recording loss must remain visible to consumers.
+        let commit = |state: &mut State| {
+            let result = commit();
+            if result.is_err() {
+                state.next = first;
+                for (subscriber, previous) in state.subscribers.iter_mut().zip(previous_deliveries)
+                {
+                    if let (Some(subscriber), Some(previous)) = (subscriber, previous) {
+                        subscriber.next = previous;
+                    }
+                }
+            }
+            result
+        };
         state.next = first
             .checked_add(events.len() as u64)
             .ok_or(ErrorCode::ObservationUnavailable)?;
@@ -155,15 +184,15 @@ impl Recorder {
             }
             deliveries.push(selected);
         }
-        let unavailable = || {
+        fn unavailable(required: bool, commit: impl FnOnce() -> Result<()>) -> Result<()> {
             if required {
                 Err(ErrorCode::ObservationUnavailable.into())
             } else {
-                Ok(())
+                commit()
             }
-        };
+        }
         if !state.available || events.len() > state.max_events {
-            return unavailable();
+            return unavailable(required, || commit(&mut state));
         }
         let time_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -176,7 +205,7 @@ impl Recorder {
         let mut projected_sessions = state.session_bytes.clone();
         for (index, event) in events.into_iter().enumerate() {
             if !aap_types::ids::valid_id(&event.session_id, 16) || event_size(&event) > 128 * 1024 {
-                return unavailable();
+                return unavailable(required, || commit(&mut state));
             }
             let record = Record {
                 schema_version: 1,
@@ -190,7 +219,7 @@ impl Recorder {
                 .len();
             added_bytes += bytes;
             if bytes > 128 * 1024 || added_bytes > 256 * 1024 || added_bytes > state.max_bytes {
-                return unavailable();
+                return unavailable(required, || commit(&mut state));
             }
             *projected_sessions
                 .entry(record.event.session_id.clone())
@@ -247,7 +276,7 @@ impl Recorder {
             }
             if !accepted {
                 if required {
-                    return unavailable();
+                    return unavailable(required, || commit(&mut state));
                 }
                 // A consumer-local best-effort loss must not discard an update
                 // accepted by the owner or another consumer. Consume delivery
@@ -289,7 +318,7 @@ impl Recorder {
                 continue;
             }
             if required || entry.required {
-                return unavailable();
+                return unavailable(required, || commit(&mut state));
             }
             global_drops.insert(*source);
             projected_bytes -= entry.bytes;
@@ -299,8 +328,9 @@ impl Recorder {
                 .unwrap() -= entry.bytes;
         }
         if !fits(projected_bytes, projected_count, &projected_sessions) {
-            return unavailable();
+            return unavailable(required, || commit(&mut state));
         }
+        commit(&mut state)?;
         for (index, sources) in local_drops.into_iter().enumerate() {
             if !sources.is_empty() {
                 state.release(&sources, Some(index));

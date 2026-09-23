@@ -108,6 +108,14 @@ An initialization response alone never admits tools before the initialized
 notification is accepted. Bound the whole handshake, including agent delay;
 late responses cannot resurrect a timed-out or revoked generation.
 
+Keep the captured session token and handshake transition provisional until the
+engine's [completion boundary](lifecycle.md#completion-and-private-state-publication)
+accepts required ending records and rechecks current authority. This applies
+separately to initialization and the initialized notification. Neither parsed
+success nor a locally queued response makes the context ready. Cancellation,
+retirement, or required-recording failure discards the tentative transition;
+it cannot restore a previous generation or trigger an automatic handshake retry.
+
 Upstream 404 on a session-bearing request invalidates the context. The next
 permitted interaction must explicitly initialize without the stale header;
 never automatically reinitialize and replay the failed tool call. Credential

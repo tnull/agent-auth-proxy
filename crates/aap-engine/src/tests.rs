@@ -229,6 +229,7 @@ fn options() -> SessionOptions {
     }
 }
 
+mod completion;
 mod dispatch;
 mod lifecycle;
 mod observation;

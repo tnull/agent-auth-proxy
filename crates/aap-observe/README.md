@@ -26,6 +26,15 @@ eviction cannot remove unacknowledged required records; required acceptance
 never evicts earlier records. Atomic updates let the engine record paired
 views and complete endings without falsely accepting half a required update.
 
+`Flow::record_batch_with` adds a short conditional state commitment after
+recording preflight and before any record becomes visible or prior evidence is
+evicted. Required recording failure never calls it; best-effort loss calls it
+once. A rejected commitment restores flow, source, and selected subscriber
+identity counters, without manufacturing loss or discarding prior records.
+The callback must not block, reenter the recorder/flow, perform external work,
+or publish state and then return an error. Recording acceptance remains local
+and bounded, not durable delivery or an upstream transaction.
+
 See the [current HTTP observation binding](../../docs/observation.md) for
 logical-view semantics, limitations, and the remaining coverage work.
 

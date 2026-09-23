@@ -136,6 +136,17 @@ failure closes the stream and records partial execution; it cannot undo already
 delivered bytes or remote effects. A synchronous detector gate is a separate
 future authorization feature.
 
+Terminal records follow the engine's
+[completion/publication contract](lifecycle.md#completion-and-private-state-publication).
+A proposed success batch is not visible until the associated operation/context
+transition commits. Required recording capacity is secured before that commit;
+best-effort loss remains a gap rather than a reason to roll back valid work.
+Rejected success batches must not consume previously retained records or expose
+contradictory complete/incomplete endings. Keep reservation and cancellation
+bounded; never call an external sink while excluding authority revocation.
+Acceptance here means the configured recording boundary, not remote consumer
+receipt, durable storage unless explicitly configured, or a detector verdict.
+
 Consumers have no direct credential, policy-write, or approval authority. Later
 IDS responses must use independently authorized control-plane actions bound to
 the intended session and current policy.

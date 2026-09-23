@@ -51,7 +51,15 @@ struct Inner {
     sequences: Mutex<[u64; 4]>,
 }
 impl Flow {
-    pub fn record_batch(&self, emissions: Vec<Emission>) -> Result<()> {
+    /// Commit a bounded state change before records become visible. Required
+    /// recording failure skips the callback; best-effort loss does not. Callback
+    /// rejection preserves prior records and identities. The callback must not
+    /// block, reenter this recorder/flow, or publish effects and then return Err.
+    pub fn record_batch_with(
+        &self,
+        emissions: Vec<Emission>,
+        commit: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         if emissions.is_empty() || emissions.len() > 16 {
             return Err(ErrorCode::RequestInvalid.into());
         }
@@ -60,6 +68,7 @@ impl Flow {
             .sequences
             .lock()
             .map_err(|_| ErrorCode::ObservationUnavailable)?;
+        let previous = *sequences;
         let context = &self.0.context;
         let mut events = Vec::with_capacity(emissions.len());
         for Emission {
@@ -102,7 +111,22 @@ impl Flow {
                 data,
             });
         }
-        self.0.recorder.record_batch(events, self.0.required)
+        let mut rejected = false;
+        let result = self
+            .0
+            .recorder
+            .record_batch_with(events, self.0.required, || {
+                let result = commit();
+                rejected = result.is_err();
+                result
+            });
+        if rejected {
+            *sequences = previous;
+        }
+        result
+    }
+    pub fn record_batch(&self, emissions: Vec<Emission>) -> Result<()> {
+        self.record_batch_with(emissions, || Ok(()))
     }
     pub fn new(recorder: Recorder, context: FlowContext, required: bool) -> Result<Self> {
         if !aap_types::ids::valid_id(&context.session_id, 16)
@@ -171,6 +195,159 @@ mod tests {
                 headers: vec![],
             },
         )
+    }
+    fn ending() -> Vec<Emission> {
+        [View::Agent, View::Upstream]
+            .into_iter()
+            .map(|view| Emission {
+                direction: Direction::Inbound,
+                view,
+                inspection: Inspection::MetadataOnly,
+                redaction: Redaction::Complete,
+                data: Data::FlowClose {
+                    complete: true,
+                    outbound_bytes: 0,
+                    inbound_bytes: 0,
+                    reason: None,
+                },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn conditional_batch_rejection_preserves_records_and_sequences() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        let context = context();
+        let subscriber = recorder
+            .subscribe(
+                Scope {
+                    sessions: vec![context.session_id.clone()],
+                    views: vec![View::Agent, View::Upstream],
+                    classes: vec![ContentClass::Metadata],
+                },
+                SubscriptionLimits {
+                    max_events: 2,
+                    max_bytes: 8192,
+                },
+            )
+            .unwrap();
+        let flow = Flow::new(recorder.clone(), context, false).unwrap();
+        flow.record_batch(ending()).unwrap();
+        let first = recorder.read(None, 16).unwrap();
+        let delivered = subscriber.read(None, 16, 8192).unwrap();
+        assert_eq!(first.records.len(), 2);
+        assert!(
+            matches!(flow.record_batch_with(ending(), || Err(ErrorCode::SessionInvalid.into())),
+            Err(error) if error.code == ErrorCode::SessionInvalid)
+        );
+        let retained = recorder.read(None, 16).unwrap();
+        assert!(
+            retained.gap.is_none(),
+            "rejected completion evicted existing evidence"
+        );
+        assert_eq!(retained.records[0].event_id, first.records[0].event_id);
+        let retained = subscriber.read(None, 16, 8192).unwrap();
+        assert!(retained.gap.is_none());
+        assert_eq!(
+            retained.deliveries[0].record.event_id,
+            first.records[0].event_id
+        );
+        recorder.acknowledge(&first.cursor).unwrap();
+        subscriber.acknowledge(&delivered.cursor).unwrap();
+        flow.record_batch_with(ending(), || Ok(())).unwrap();
+        let next = recorder.read(Some(&first.cursor), 16).unwrap();
+        assert!(
+            next.gap.is_none(),
+            "rejected completion consumed event identities"
+        );
+        assert_eq!(next.records.len(), 2);
+        assert!(next.records.iter().all(|record| record.event.sequence == 1));
+        let next = subscriber.read(Some(&delivered.cursor), 16, 8192).unwrap();
+        assert!(
+            next.gap.is_none(),
+            "rejected completion consumed delivery identities"
+        );
+        assert_eq!(next.deliveries.len(), 2);
+        assert_eq!(next.deliveries[0].delivery_id, 3);
+    }
+
+    #[test]
+    fn conditional_batch_rejected_loss_preserves_identities() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        let required = Flow::new(recorder.clone(), context(), true).unwrap();
+        required.record_batch(ending()).unwrap();
+        let first = recorder.read(None, 16).unwrap();
+        let flow = Flow::new(recorder.clone(), context(), false).unwrap();
+        assert!(
+            matches!(flow.record_batch_with(ending(), || Err(ErrorCode::SessionInvalid.into())),
+            Err(error) if error.code == ErrorCode::SessionInvalid)
+        );
+        recorder.acknowledge(&first.cursor).unwrap();
+        flow.record_batch_with(ending(), || Ok(())).unwrap();
+        let next = recorder.read(Some(&first.cursor), 16).unwrap();
+        assert!(
+            next.gap.is_none(),
+            "rejected completion manufactured an observation gap"
+        );
+        assert_eq!(next.records.len(), 2);
+        assert!(next.records.iter().all(|record| record.event.sequence == 0));
+    }
+
+    #[test]
+    fn conditional_batch_cannot_publish_before_state_commit() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        let flow = Flow::new(recorder.clone(), context(), true).unwrap();
+        let mut committed = false;
+        flow.record_batch_with(ending(), || {
+            assert!(
+                matches!(
+                    recorder.state.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ),
+                "records can become visible before their state commit"
+            );
+            committed = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(committed);
+        assert_eq!(recorder.read(None, 16).unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn conditional_batch_required_capacity_failure_never_commits() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        let flow = Flow::new(recorder.clone(), context(), true).unwrap();
+        flow.record_batch(ending()).unwrap();
+        let mut committed = false;
+        assert!(
+            matches!(flow.record_batch_with(ending(), || { committed = true; Ok(()) }),
+            Err(error) if error.code == ErrorCode::ObservationUnavailable)
+        );
+        assert!(!committed);
+        assert_eq!(recorder.read(None, 16).unwrap().records.len(), 2);
+    }
+
+    #[test]
+    fn conditional_batch_best_effort_loss_still_commits_once() {
+        let recorder = Recorder::new(aap_types::ids::random_id(16).unwrap(), 2, 8192).unwrap();
+        Flow::new(recorder.clone(), context(), true)
+            .unwrap()
+            .record_batch(ending())
+            .unwrap();
+        let first = recorder.read(None, 16).unwrap();
+        let flow = Flow::new(recorder.clone(), context(), false).unwrap();
+        let mut commits = 0;
+        flow.record_batch_with(ending(), || {
+            commits += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(commits, 1);
+        assert_eq!(recorder.read(None, 16).unwrap().records.len(), 2);
+        let lost = recorder.read(Some(&first.cursor), 16).unwrap();
+        assert!(lost.records.is_empty());
+        assert_eq!(lost.gap.unwrap().first, 3);
     }
     #[test]
     fn each_directional_view_has_its_own_sequence_and_shared_flow_identity() {

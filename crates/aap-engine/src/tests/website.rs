@@ -4,6 +4,174 @@ use aap_types::profile::LoginEncoding;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+#[tokio::test]
+async fn website_completion_respects_required_and_best_effort_recording() {
+    for required in [true, false] {
+        let encoding = LoginEncoding::Form;
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let broker = Broker::new(website_configuration(&fixture, encoding).await).unwrap();
+        let mut settings = options();
+        settings.require_observation = required;
+        let session = broker.create_session(settings).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let input = request(
+            &fixture,
+            &login,
+            "POST",
+            "/session",
+            &login_body(&login, &csrf, encoding),
+        );
+        let id = input.request_id.clone();
+        let response = session.execute(input).await.unwrap();
+        let before = fixture.recorder.read(None, 256).unwrap();
+        fixture.recorder.set_available(false);
+        let result = response.into_body().collect().await;
+        fixture.recorder.set_available(true);
+        assert_eq!(result.is_err(), required);
+        assert!(
+            fixture
+                .recorder
+                .read(Some(&before.cursor), 256)
+                .unwrap()
+                .gap
+                .is_some()
+        );
+        let state = session.operation(&id).unwrap().status().unwrap().state;
+        assert_eq!(
+            state,
+            if required {
+                OperationState::OutcomeUnknown
+            } else {
+                OperationState::Completed
+            }
+        );
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        assert_eq!(
+            context.state.lock().unwrap().status,
+            if required {
+                AuthState::Revoked
+            } else {
+                AuthState::Authenticated
+            }
+        );
+        let protected = session
+            .execute(request(&fixture, &login, "GET", "/protected", b""))
+            .await;
+        if required {
+            assert!(protected.is_err());
+            assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+        } else {
+            protected.unwrap().into_body().collect().await.unwrap();
+            assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        }
+    }
+}
+
+#[tokio::test]
+async fn completion_gate_keeps_website_cookies_unpublished_before_eof() {
+    for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let broker = Broker::new(website_configuration(&fixture, encoding).await).unwrap();
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let response = session
+            .execute(request(
+                &fixture,
+                &login,
+                "POST",
+                "/session",
+                &login_body(&login, &csrf, encoding),
+            ))
+            .await
+            .unwrap();
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        assert!(
+            !context
+                .state
+                .lock()
+                .unwrap()
+                .jar
+                .has_all(&["session".into()], std::time::SystemTime::now())
+                .unwrap(),
+            "website cookie was published before successful response completion"
+        );
+        response.into_body().collect().await.unwrap();
+        assert!(
+            context
+                .state
+                .lock()
+                .unwrap()
+                .jar
+                .has_all(&["session".into()], std::time::SystemTime::now())
+                .unwrap()
+        );
+        assert_eq!(
+            context.state.lock().unwrap().status,
+            AuthState::Authenticated
+        );
+        session
+            .execute(request(&fixture, &login, "GET", "/protected", b""))
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completion_gate_rejects_late_website_authentication() {
+    use super::completion::{incomplete_endings, retire_at_completion};
+    use super::dispatch::EndAuthority;
+    for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let broker =
+            Arc::new(Broker::new(website_configuration(&fixture, encoding).await).unwrap());
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let input = request(
+            &fixture,
+            &login,
+            "POST",
+            "/session",
+            &login_body(&login, &csrf, encoding),
+        );
+        let id = input.request_id.clone();
+        let response = session.execute(input).await.unwrap();
+        let (result, status) =
+            retire_at_completion(broker, &session, EndAuthority::Broker, async move {
+                response.into_body().collect().await
+            })
+            .await;
+        assert!(
+            result.is_err(),
+            "late login committed after authority retirement"
+        );
+        assert_eq!(status.state, OperationState::OutcomeUnknown);
+        incomplete_endings(&fixture, &id);
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        assert_eq!(context.state.lock().unwrap().status, AuthState::Revoked);
+        assert!(
+            !context
+                .state
+                .lock()
+                .unwrap()
+                .jar
+                .has_all(&["session".into()], std::time::SystemTime::now())
+                .unwrap()
+        );
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn final_dispatch_gate_blocks_closed_password_handoff() {
     website_dispatch_boundary(false).await;

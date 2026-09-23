@@ -9,6 +9,62 @@ mod cleanup;
 mod controls;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completion_gate_rejects_late_remote_initialization() {
+    remote_completion_boundary(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completion_gate_rejects_late_remote_readiness() {
+    remote_completion_boundary(true).await;
+}
+
+async fn remote_completion_boundary(initialized: bool) {
+    use super::completion::{incomplete_endings, retire_at_completion};
+    use super::dispatch::EndAuthority;
+    for sse in [false, true] {
+        let fixture = fixture(sse, false).await;
+        let broker = Arc::new(Broker::new(configuration(&fixture)).unwrap());
+        let positive = broker.create_session(options()).unwrap();
+        handshake(&fixture, &positive).await;
+        response_json(positive.execute(request(&fixture, call())).await.unwrap()).await;
+        let session = broker.create_session(options()).unwrap();
+        if initialized {
+            response_json(
+                session
+                    .execute(request(&fixture, initialize()))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+        }
+        let message = if initialized {
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+        } else {
+            initialize()
+        };
+        let input = request(&fixture, message);
+        let id = input.request_id.clone();
+        let response = session.execute(input).await.unwrap();
+        let (result, status) =
+            retire_at_completion(broker, &session, EndAuthority::Broker, async move {
+                response.into_body().collect().await
+            })
+            .await;
+        assert!(
+            result.is_err(),
+            "late remote response committed after authority retirement"
+        );
+        assert_eq!(status.state, OperationState::OutcomeUnknown);
+        incomplete_endings(&fixture, &id);
+        assert!(session.execute(request(&fixture, call())).await.is_err());
+        assert_eq!(
+            fixture.origin.requests.lock().unwrap().len(),
+            if initialized { 5 } else { 4 }
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn final_dispatch_gate_blocks_closed_remote_mcp_handoff() {
     use super::dispatch::{CountedTransport, EndAuthority, close_at_ready};
     for sse in [false, true] {

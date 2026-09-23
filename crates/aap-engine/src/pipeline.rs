@@ -457,7 +457,7 @@ impl Guard {
                 .state
                 .lock()
                 .map_err(|_| ErrorCode::InternalError)?;
-            self.session.commit_dispatch(|| {
+            self.session.commit_authority(|| {
                 if state.state != OperationState::Ready || self.operation.cancelled.is_cancelled() {
                     return Err(ErrorCode::RequestConflict.into());
                 }
@@ -519,13 +519,32 @@ impl Guard {
         Ok(child)
     }
     pub fn complete_local(&mut self, status: u16) -> Result<()> {
-        self.session.check()?;
-        if self.operation.cancelled.is_cancelled() {
-            return Err(ErrorCode::RequestConflict.into());
+        let result = {
+            let mut state = self
+                .operation
+                .state
+                .lock()
+                .map_err(|_| ErrorCode::InternalError)?;
+            #[cfg(test)]
+            self.session
+                .before_completion(&self.operation.request.request_id);
+            super::observation::finish_with(&self.flow, &self.observed, true, None, || {
+                self.session.commit_authority(|| {
+                    if terminal(state.state) || self.operation.cancelled.is_cancelled() {
+                        return Err(ErrorCode::RequestConflict.into());
+                    }
+                    state.state = OperationState::Completed;
+                    state.status = Some(status);
+                    Ok(())
+                })
+            })
+        };
+        if let Err(error) = result {
+            if error.code == ErrorCode::SessionInvalid {
+                self.operation.cancel();
+            }
+            return Err(error);
         }
-        self.finish_observation(true, None)?;
-        self.operation
-            .transition(OperationState::Completed, Some(status))?;
         self.finished = true;
         Ok(())
     }
@@ -548,31 +567,72 @@ impl Guard {
             if let Some(exchange) = &self.remote {
                 exchange.check()?;
             }
-            let mut context_state = self
+            let website = self
                 .website
                 .as_ref()
+                .map(|exchange| exchange.binding.clone());
+            let remote = self
+                .remote
+                .as_ref()
+                .map(|exchange| exchange.binding.clone());
+            let mut context_state = website
+                .as_ref()
+                .map(|binding| binding.state.lock().map_err(|_| ErrorCode::InternalError))
+                .transpose()?;
+            let mut remote_state = remote
+                .as_ref()
+                .map(|binding| binding.state.lock().map_err(|_| ErrorCode::InternalError))
+                .transpose()?;
+            let pending = self
+                .website
+                .as_mut()
                 .map(|exchange| {
                     exchange
-                        .binding
-                        .state
-                        .lock()
-                        .map_err(|_| ErrorCode::InternalError)
+                        .pending
+                        .take()
+                        .map(|pending| (pending, exchange.final_state))
+                        .ok_or(ErrorCode::InternalError)
                 })
                 .transpose()?;
-            if self.website.as_ref().is_some_and(|exchange| {
-                exchange.binding.cancelled.is_cancelled()
-                    || exchange.binding.expires <= Instant::now()
-            }) {
-                return Err(ErrorCode::OutcomeUnknown.into());
-            }
-            self.finish_observation(true, None)?;
-            if let Some(exchange) = &mut self.remote {
-                exchange.commit()?;
-            }
-            if let (Some(context), Some(exchange)) = (&mut context_state, &self.website) {
-                context.status = exchange.final_state;
-            }
-            state.state = OperationState::Completed;
+            #[cfg(test)]
+            self.session
+                .before_completion(&self.operation.request.request_id);
+            super::observation::finish_with(&self.flow, &self.observed, true, None, || {
+                self.session
+                    .commit_authority(|| {
+                        if self.operation.cancelled.is_cancelled()
+                            || state.state != OperationState::Dispatching
+                            || website.as_ref().is_some_and(|binding| {
+                                binding.cancelled.is_cancelled()
+                                    || binding.expires <= Instant::now()
+                            })
+                        {
+                            return Err(ErrorCode::OutcomeUnknown.into());
+                        }
+                        if let (Some(context), Some(exchange)) =
+                            (&mut remote_state, &mut self.remote)
+                        {
+                            exchange.commit_locked(context)?;
+                        }
+                        if let (Some(context), Some((pending, status))) =
+                            (&mut context_state, pending)
+                        {
+                            context.jar = pending.jar;
+                            context.csrf = pending.csrf;
+                            context.template = pending.template;
+                            context.status = status;
+                        }
+                        state.state = OperationState::Completed;
+                        Ok(())
+                    })
+                    .map_err(|error| {
+                        if error.code == ErrorCode::SessionInvalid {
+                            ErrorCode::OutcomeUnknown.into()
+                        } else {
+                            error
+                        }
+                    })
+            })?;
         }
         self.finished = true;
         Ok(())
@@ -581,7 +641,8 @@ impl Guard {
         if self.finished {
             return;
         }
-        if let Some(exchange) = &self.website {
+        if let Some(exchange) = &mut self.website {
+            exchange.pending = None;
             exchange.binding.invalidate(AuthState::Revoked);
         }
         if let Some(exchange) = &mut self.remote {

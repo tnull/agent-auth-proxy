@@ -20,7 +20,7 @@ pub(super) struct Vault {
 }
 pub(super) struct Binding {
     pub id: String,
-    state: Mutex<Context>,
+    pub state: Mutex<Context>,
     lease: Lease,
     reference: ItemRef,
     store: Arc<dyn SecretStore>,
@@ -105,17 +105,17 @@ impl Exchange {
         let binding = self.binding.clone();
         Box::pin(async move { binding.revalidate().await })
     }
-    pub fn commit(&mut self) -> Result<()> {
-        self.check()?;
-        self.binding
-            .state
-            .lock()
-            .map_err(|_| ErrorCode::InternalError)?
-            .complete(
-                self.exchange.take().ok_or(ErrorCode::RequestConflict)?,
-                self.completion.take().ok_or(ErrorCode::RequestConflict)?,
-                Instant::now().into_std(),
-            )?;
+    /// The engine holds context state before entering the authority boundary.
+    /// No lock acquisition, cancellation notification, or I/O belongs here.
+    pub fn commit_locked(&mut self, state: &mut Context) -> Result<()> {
+        if self.binding.cancelled.is_cancelled() || self.binding.expires <= Instant::now() {
+            return Err(ErrorCode::OutcomeUnknown.into());
+        }
+        state.complete(
+            self.exchange.take().ok_or(ErrorCode::RequestConflict)?,
+            self.completion.take().ok_or(ErrorCode::RequestConflict)?,
+            Instant::now().into_std(),
+        )?;
         Ok(())
     }
     pub fn abandon(&mut self) {

@@ -1,7 +1,7 @@
 //! Safe logical views; no authenticated request or raw response is serialized.
 use super::pipeline::Guard;
 use super::*;
-use aap_observe::{Data, Direction, Emission, Inspection, Redaction, View};
+use aap_observe::{Data, Direction, Emission, Flow, Inspection, Redaction, View};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 #[derive(Clone, Default)]
@@ -57,49 +57,7 @@ impl Guard {
         ])
     }
     fn record_many(&self, emissions: Vec<Emission>) -> Result<()> {
-        let mut states = self
-            .observed
-            .lock()
-            .map_err(|_| ErrorCode::ObservationUnavailable)?;
-        let mut next = states.clone();
-        for event in &emissions {
-            let state = &mut next[slot(event.direction, event.view)];
-            match &event.data {
-                Data::RequestStart { headers, .. } | Data::ResponseStart { headers, .. } => {
-                    if state.started {
-                        return Err(ErrorCode::ObservationUnavailable.into());
-                    }
-                    state.started = true;
-                    state.media_type = headers
-                        .iter()
-                        .find(|(name, value)| name == "content-type" && value != "[redacted]")
-                        .map(|(_, value)| value.clone());
-                }
-                Data::ContentChunk {
-                    offset,
-                    body_base64,
-                    ..
-                } => {
-                    if !state.started || state.ended || *offset != state.bytes {
-                        return Err(ErrorCode::ObservationUnavailable.into());
-                    }
-                    state.bytes += STANDARD
-                        .decode(body_base64)
-                        .map_err(|_| ErrorCode::ObservationUnavailable)?
-                        .len() as u64;
-                }
-                Data::ContentEnd { bytes, .. } => {
-                    if state.ended || *bytes != state.bytes {
-                        return Err(ErrorCode::ObservationUnavailable.into());
-                    }
-                    state.ended = true;
-                }
-                _ => {}
-            }
-        }
-        self.flow.record_batch(emissions)?;
-        *states = next;
-        Ok(())
+        record_with(&self.flow, &self.observed, emissions, || Ok(()))
     }
     pub fn content(&self, direction: Direction, view: View, bytes: &[u8]) -> Result<()> {
         self.content_views(direction, &[view], bytes)
@@ -159,42 +117,101 @@ impl Guard {
         self.record_many(events)
     }
     pub fn finish_observation(&self, complete: bool, reason: Option<ErrorCode>) -> Result<()> {
-        let events = {
-            let states = self
-                .observed
-                .lock()
-                .map_err(|_| ErrorCode::ObservationUnavailable)?;
-            let mut events = Vec::new();
-            for view in [View::Agent, View::Upstream] {
-                for direction in [Direction::Outbound, Direction::Inbound] {
-                    let state = &states[slot(direction, view)];
-                    if state.started && !state.ended {
-                        events.push(emission(
-                            direction,
-                            view,
-                            Data::ContentEnd {
-                                complete,
-                                bytes: state.bytes,
-                                reason,
-                            },
-                        ));
-                    }
-                }
-                events.push(emission(
-                    Direction::Inbound,
-                    view,
-                    Data::FlowClose {
-                        complete,
-                        outbound_bytes: states[slot(Direction::Outbound, view)].bytes,
-                        inbound_bytes: states[slot(Direction::Inbound, view)].bytes,
-                        reason,
-                    },
-                ));
-            }
-            events
-        };
-        self.record_many(events)
+        finish_with(&self.flow, &self.observed, complete, reason, || Ok(()))
     }
+}
+
+fn record_with(
+    flow: &Flow,
+    observed: &Mutex<[StreamState; 4]>,
+    emissions: Vec<Emission>,
+    commit: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let mut states = observed
+        .lock()
+        .map_err(|_| ErrorCode::ObservationUnavailable)?;
+    let mut next = states.clone();
+    for event in &emissions {
+        let state = &mut next[slot(event.direction, event.view)];
+        match &event.data {
+            Data::RequestStart { headers, .. } | Data::ResponseStart { headers, .. } => {
+                if state.started {
+                    return Err(ErrorCode::ObservationUnavailable.into());
+                }
+                state.started = true;
+                state.media_type = headers
+                    .iter()
+                    .find(|(name, value)| name == "content-type" && value != "[redacted]")
+                    .map(|(_, value)| value.clone());
+            }
+            Data::ContentChunk {
+                offset,
+                body_base64,
+                ..
+            } => {
+                if !state.started || state.ended || *offset != state.bytes {
+                    return Err(ErrorCode::ObservationUnavailable.into());
+                }
+                state.bytes += STANDARD
+                    .decode(body_base64)
+                    .map_err(|_| ErrorCode::ObservationUnavailable)?
+                    .len() as u64;
+            }
+            Data::ContentEnd { bytes, .. } => {
+                if state.ended || *bytes != state.bytes {
+                    return Err(ErrorCode::ObservationUnavailable.into());
+                }
+                state.ended = true;
+            }
+            _ => {}
+        }
+    }
+    flow.record_batch_with(emissions, commit)?;
+    *states = next;
+    Ok(())
+}
+
+pub(super) fn finish_with(
+    flow: &Flow,
+    observed: &Mutex<[StreamState; 4]>,
+    complete: bool,
+    reason: Option<ErrorCode>,
+    commit: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let events = {
+        let states = observed
+            .lock()
+            .map_err(|_| ErrorCode::ObservationUnavailable)?;
+        let mut events = Vec::new();
+        for view in [View::Agent, View::Upstream] {
+            for direction in [Direction::Outbound, Direction::Inbound] {
+                let state = &states[slot(direction, view)];
+                if state.started && !state.ended {
+                    events.push(emission(
+                        direction,
+                        view,
+                        Data::ContentEnd {
+                            complete,
+                            bytes: state.bytes,
+                            reason,
+                        },
+                    ));
+                }
+            }
+            events.push(emission(
+                Direction::Inbound,
+                view,
+                Data::FlowClose {
+                    complete,
+                    outbound_bytes: states[slot(Direction::Outbound, view)].bytes,
+                    inbound_bytes: states[slot(Direction::Inbound, view)].bytes,
+                    reason,
+                },
+            ));
+        }
+        events
+    };
+    record_with(flow, observed, events, commit)
 }
 
 pub(super) fn headers(headers: &http::HeaderMap) -> Vec<(String, String)> {

@@ -2,6 +2,7 @@ use super::*;
 use super::{pipeline::Guard, vault::Binding};
 use aap_auth::{
     Redactor,
+    cookies::CookieJar,
     login::{CsrfToken, ValidatedLogin, reserved},
     sanitize_response,
 };
@@ -16,7 +17,15 @@ use std::time::SystemTime;
 pub(super) struct Exchange {
     pub binding: Arc<Binding>,
     pub final_state: AuthState,
+    pub pending: Option<ResponseState>,
     _permit: OwnedSemaphorePermit,
+}
+/// Private exchange-owned state. It is never available to another request
+/// until the engine commits completion; abandonment drops it, not a rollback.
+pub(super) struct ResponseState {
+    pub jar: CookieJar,
+    pub csrf: Option<CsrfToken>,
+    pub template: Redactor,
 }
 struct Work<'a> {
     binding: Arc<Binding>,
@@ -111,6 +120,7 @@ impl Session {
         guard.website = Some(Exchange {
             binding: binding.clone(),
             final_state: previous,
+            pending: None,
             _permit: permit,
         });
         if is_login {
@@ -210,6 +220,14 @@ impl Session {
             Some(parsed) => parsed.observation()?,
             None => Bytes::copy_from_slice(&body),
         };
+        let mut pending = {
+            let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            ResponseState {
+                jar: std::mem::replace(&mut state.jar, CookieJar::new(target)),
+                csrf: state.csrf.take(),
+                template: std::mem::replace(&mut state.template, Redactor::new(&[])?),
+            }
+        };
         let body = if let Some(parsed) = parsed {
             self.login_attempt(&binding.item.item_id)?;
             let store = configuration
@@ -221,21 +239,20 @@ impl Session {
                 .resolve_current(store.as_ref(), &reference, &binding.lease)
                 .await?;
             let (body, redactor) = parsed.substitute(&snapshot)?;
-            let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
-            state.template = state.template.merged(&redactor)?;
+            pending.template = pending.template.merged(&redactor)?;
             body
         } else {
             Bytes::from(body)
         };
         let (cookie, outbound_template) = {
-            let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            let state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
             let values = state.values.as_ref().ok_or(ErrorCode::PlaceholderInvalid)?;
             let mut placeholders = vec![values.username().as_bytes(), values.password().as_bytes()];
-            if let Some(csrf) = &state.csrf {
+            if let Some(csrf) = &pending.csrf {
                 placeholders.push(csrf.placeholder().as_bytes());
             }
-            let template = state.template.merged(&Redactor::new(&placeholders)?)?;
-            (state.jar.header(target, SystemTime::now())?, template)
+            let template = pending.template.merged(&Redactor::new(&placeholders)?)?;
+            (pending.jar.header(target, SystemTime::now())?, template)
         };
         let inserted = is_login || cookie.is_some();
         let mut outgoing = http::Request::builder()
@@ -331,14 +348,14 @@ impl Session {
         let upstream_bytes = bytes.clone();
         self.revalidate_binding(&binding).await?;
         let (template, observer) = {
-            let mut state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
+            let state = binding.state.lock().map_err(|_| ErrorCode::InternalError)?;
             if binding.cancelled.is_cancelled() || binding.expires <= Instant::now() {
                 return Err(ErrorCode::PlaceholderInvalid.into());
             }
-            let cookies = state
+            let cookies = pending
                 .jar
                 .capture(target, &mut parts.headers, SystemTime::now())?;
-            state.template = state.template.merged(&cookies)?;
+            pending.template = pending.template.merged(&cookies)?;
             if parts.status.is_redirection()
                 && (!is_login
                     || parts.status != http::StatusCode::SEE_OTHER
@@ -350,14 +367,14 @@ impl Session {
                 aap_types::json::decode(&bytes).map_err(|_| ErrorCode::InspectionUnavailable)?;
             if is_page && let Some(csrf) = &login.csrf {
                 let (token, page) = CsrfToken::from_page(csrf, &bytes)?;
-                state.template = state.template.merged(&token.redactor()?)?;
-                state.csrf = Some(token);
+                pending.template = pending.template.merged(&token.redactor()?)?;
+                pending.csrf = Some(token);
                 bytes = page;
             }
             if is_login {
                 let success = parts.status.as_u16() == login.success.status
                     && parsed.pointer(&login.success.json_pointer) == Some(&login.success.expected)
-                    && state
+                    && pending
                         .jar
                         .has_all(&login.success.cookie_names, SystemTime::now())?;
                 guard
@@ -370,15 +387,15 @@ impl Session {
                     AuthState::Unauthenticated
                 };
                 if !success {
-                    state.jar.clear();
-                    state.csrf = None;
+                    pending.jar.clear();
+                    pending.csrf = None;
                     if parts.status.is_redirection() {
                         return Err(ErrorCode::AuthFailed.into());
                     }
                 }
             } else if matches!(parts.status.as_u16(), 401 | 403) {
-                state.jar.clear();
-                state.csrf = None;
+                pending.jar.clear();
+                pending.csrf = None;
                 guard
                     .website
                     .as_mut()
@@ -387,10 +404,10 @@ impl Session {
             }
             let values = state.values.as_ref().ok_or(ErrorCode::PlaceholderInvalid)?;
             let mut private = vec![values.username().as_bytes(), values.password().as_bytes()];
-            if let Some(csrf) = &state.csrf {
+            if let Some(csrf) = &pending.csrf {
                 private.push(csrf.placeholder().as_bytes());
             }
-            (state.template.fresh(), Redactor::new(&private)?)
+            (pending.template.fresh(), Redactor::new(&private)?)
         };
         let upstream_observed = redact(&mut template.merged(&observer)?, &upstream_bytes)?;
         let private_response = http::Response::from_parts(
@@ -434,6 +451,11 @@ impl Session {
         guard
             .operation
             .transition(OperationState::Dispatching, Some(parts.status.as_u16()))?;
+        guard
+            .website
+            .as_mut()
+            .ok_or(ErrorCode::InternalError)?
+            .pending = Some(pending);
         Ok(http::Response::from_parts(
             parts,
             Full::new(bytes)

@@ -128,10 +128,22 @@ agent-controlled `Origin` or `Referer` headers. Browser partitioned cookies and
 complex cross-site federation require an explicit later compatibility profile.
 
 Strip incoming agent Cookie fields on a managed route and construct the outbound
-Cookie field exclusively from the selected jar. Rotation on a response takes
-effect before forwarding that response. Serialize cookie-mutating exchanges
-per context in the baseline to avoid racing login/refresh/logout updates;
-applications needing parallel session mutations need a reviewed conflict policy.
+Cookie field exclusively from the selected jar. Capture cookie changes and
+prepare redaction before releasing affected response content, but keep those
+changes provisional for the current exchange. Publish the updated jar and CSRF
+state for subsequent operations only at the engine's successful
+[completion boundary](lifecycle.md#completion-and-private-state-publication).
+Receipt of Set-Cookie or a successful HTTP status alone does not publish login
+success. Serialize cookie-mutating exchanges per context through completion or
+abandonment; applications needing parallel session mutations need a reviewed
+conflict policy.
+
+If validation, required observation, cancellation, or authority revalidation
+prevents completion, discard tentative cookies/CSRF and invalidate the affected
+context conservatively. Do not restore an earlier jar as a claimed rollback of
+upstream cookie refresh, deletion, or login. Subsequent use requires fresh,
+explicitly authorized preparation, not an automatic repeated login. Local
+logout/revocation still takes effect immediately, even if recording fails.
 
 The common local `auth_context` associates follow-up requests with the jar.
 A transparent session with one enrolled account can infer this association.
@@ -228,5 +240,9 @@ failures never select a different credential or expand the permitted scope.
 - Lost login responses, invalid credentials, locked stores, password rotation,
   restart, and interrupted observation do not revive invalidated bindings or
   trigger automatic retries after uncertain dispatch.
+- Completion races leave provisional cookie/CSRF state unusable after
+  retirement; an independent successful exchange commits it only with coherent
+  operation and required-observation endings. Apply the
+  [L6 acceptance cases](lifecycle.md#l6-completion-acceptance-cases).
 - Password echoes and declared body tokens are withheld/redacted; unsupported
   script authentication returns an explicit compatibility error.

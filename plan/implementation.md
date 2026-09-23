@@ -203,6 +203,17 @@ closure separately from bounded drain; the latter needs task/socket evidence,
 including retained unpolled responses and cleanup failure. Do not mark W4/W8
 shutdown complete merely because session revocation succeeds.
 
+Deliver [completion and private-state publication](lifecycle.md#completion-and-private-state-publication)
+as a cross-crate contract: `aap-observe` provides bounded conditional acceptance
+of ending records; `aap-engine` orders authority, operation completion, and
+context publication; `aap-auth` and `aap-mcp-upstream` keep response-derived
+state tentative until that decision. Adapters share this engine path. Establish
+recording acceptance/rejection tests first, then provider completion races,
+website cookie/CSRF publication, remote MCP handshake transitions, and local
+placeholder publication. Run [C1–C6](lifecycle.md#l6-completion-acceptance-cases)
+through daemon and embedded fixtures before closing L6. No new crate,
+transaction framework, or dependency is required by this contract.
+
 ## W5–W6: password-manager vertical slice
 
 Implement `vault.search_items`, `vault.get_login`, `vault.auth_status`, and

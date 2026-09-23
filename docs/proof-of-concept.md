@@ -1610,3 +1610,67 @@ unpolled response ownership, aggregate task/native-work drain and deadlines,
 reload retirement, and complete daemon/embedded lifecycle parity remain open.
 Operational recovery, native Keychain delivery, and the other unchecked proof
 gates remain required; this change does not complete W4/W8 or the overall goal.
+
+## Ordered completion and provisional response state
+
+HTTP and MCP completion now shares the engine's authority ordering boundary
+with dispatch, session revocation, and broker closure. Operation/context locks
+and bounded recording preflight precede that short boundary. It contains no
+native access, transport work, external sink callback, or cancellation delivery.
+If retirement wins, the response cannot commit successful completion or publish
+a usable authentication transition, even before the revocation walk reaches it.
+
+`Flow::record_batch_with` conditionally commits state after capacity preflight
+but before records become visible or earlier evidence is evicted. Required
+recording failure never invokes the commit; best-effort recording loss still
+permits valid work with explicit gaps. A rejected commit restores source,
+selected subscriber, and flow identities while retaining prior records. This
+is a bounded local consistency boundary, not durable collector delivery or a
+transaction with the upstream resource. The trusted callback must remain short
+and cannot publish effects then return an error.
+
+Website exchanges now own their cookie jar, CSRF mapping, and private redaction
+template provisionally. Other exchanges cannot use that state before successful
+response completion. Failed completion drops it and invalidates the binding,
+rather than treating an earlier jar as a rollback of upstream effects. Native
+MCP session capture and initialized/readiness transitions use the same completion
+boundary. Local-only MCP cleanup cannot emit success after its authority ends,
+nor invent an upstream dispatch for an absent native context.
+
+Six engine regressions cover provider session/broker retirement, form/JSON cookie
+publication and late login, JSON/SSE MCP initialization and readiness, and local
+DELETE completion. Barriers retire authority immediately before commitment;
+counted real TLS origins and positive controls distinguish non-dispatch from
+already received work. Successful/incomplete endings are checked independently
+for both logical views. Three recorder regressions cover early visibility,
+eviction/cursor damage, and false loss on a rejected best-effort commit. All nine
+failed before implementation, passed afterward, failed again with only pre-change
+production restored, and passed after restoration. The recorder's new public
+method used a test-first stub on the pre-implementation run; the engine had only
+test-only barriers. No assertion was weakened.
+
+Three further conformance tests preserve required-capacity refusal, exactly-once
+best-effort commitment, and website completion under required versus best-effort
+outages. These also pass before the change and are not claimed as regression
+guards. No external dependency or agent wire schema changed.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0: 310 unit
+tests, nineteen ordinary daemon process tests, and the compile-fail doctest.
+All nine independent consumer tests also pass on both compilers: one client,
+two embedded, and six custom-adapter tests, using matching daemon builds.
+Formatting, warning-free Clippy, and warning-free public docs pass on 1.95.0.
+
+All six existing Linux confinement fixtures pass serially on both compilers,
+with matching probe/daemon binaries and no concurrent build/test workloads.
+These cover the existing provider, MCP website, CONNECT, remote MCP, and TCP
+sandbox demonstrations; they do not establish the missing broader bypass or
+physical-observation matrix. Total verified checks are 345 tests per compiler,
+including independent consumers and these opt-in fixtures.
+
+This is progress on L6, not its closure. Placeholder issuance publication,
+generation retirement/reload, response-time backend freshness, abandonment and
+refresh/deletion combinations, and the complete daemon/embedded race matrix
+still need their own evidence. Unpolled bodies may retain exchange-owned private
+buffers until driven/dropped; this change does not establish immediate erasure,
+socket/task drain, or the aggregate shutdown deadline. Operational recovery,
+native Keychain delivery, and all remaining proof gates are still required.

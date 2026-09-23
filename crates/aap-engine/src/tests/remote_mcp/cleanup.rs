@@ -1,6 +1,32 @@
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completion_gate_rejects_late_local_cleanup_success() {
+    use crate::tests::{
+        completion::{incomplete_endings, retire_at_completion},
+        dispatch::EndAuthority,
+    };
+    let fixture = fixture(204, "", true).await;
+    let broker = Arc::new(Broker::new(config(&fixture)).unwrap());
+    let session = broker.create_session(options()).unwrap();
+    // No native context: local DELETE must not invent an upstream dispatch.
+    closed(session.execute(delete(&fixture)).await.unwrap(), "skipped").await;
+    let input = delete(&fixture);
+    let id = input.request_id.clone();
+    let running = session.clone();
+    let (result, status) =
+        retire_at_completion(broker, &session, EndAuthority::Broker, async move {
+            running.execute(input).await
+        })
+        .await;
+    assert!(result.is_err());
+    assert_eq!(status.state, OperationState::Cancelled);
+    incomplete_endings(&fixture, &id);
+    assert!(fixture.origin.requests.lock().unwrap().is_empty());
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn final_dispatch_gate_blocks_closed_remote_control_handoff() {
     use crate::tests::dispatch::{CountedTransport, EndAuthority, close_at_ready};
     let fixture = fixture(204, "", true).await;
