@@ -1,7 +1,169 @@
 use super::*;
 use aap_policy::{TcpLimits, TcpProfile};
+use aap_types::stream::service::{Admission, ApplicationIo, AttachmentError, Connection};
 use aap_types::stream::{self, Frame, Header};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+struct Application(tokio::io::DuplexStream);
+impl ApplicationIo for Application {
+    fn poll_read(
+        &mut self,
+        cx: &mut Context<'_>,
+        bytes: &mut [u8],
+    ) -> Poll<std::result::Result<usize, AttachmentError>> {
+        let mut read = ReadBuf::new(bytes);
+        match Pin::new(&mut self.0).poll_read(cx, &mut read) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(read.filled().len())),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(AttachmentError::AttachmentLost)),
+        }
+    }
+    fn poll_write(
+        &mut self,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<std::result::Result<usize, AttachmentError>> {
+        Pin::new(&mut self.0)
+            .poll_write(cx, bytes)
+            .map_err(|_| AttachmentError::AttachmentLost)
+    }
+    fn poll_send_end(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::result::Result<(), AttachmentError>> {
+        Pin::new(&mut self.0)
+            .poll_shutdown(cx)
+            .map_err(|_| AttachmentError::AttachmentLost)
+    }
+}
+
+#[tokio::test]
+async fn daemon_tcp_client_delivers_binary_and_cancels_without_reattaching() {
+    let mut fixture = Fixture::new().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    fixture.config.tcp_profiles.push(TcpProfile {
+        id: "client-fixture".into(),
+        endpoint: address.to_string(),
+        addresses: AddressPolicy::Pinned(vec![address.ip()]),
+        limits: TcpLimits::default(),
+        inspection: stream::Inspection::PlaintextBytes,
+        require_approval: false,
+        require_observation: true,
+    });
+    fixture.write();
+    let (mut child, ready) = fixture.start().await;
+    let (status, attachment) = local(
+        fixture.root.join("r").join(ready.control_socket),
+        "/aap/operator/v1/session/create",
+        json!({"resources":["client-fixture"],"lifetime_seconds":60}),
+    )
+    .await;
+    assert!(status.is_success());
+    let attachment: SessionAttachment = serde_json::from_value(attachment).unwrap();
+    let client = aap_client::DaemonSessionClient::new(
+        fixture.root.join("r").join(attachment.ingress_socket),
+    );
+    for action in 0..3 {
+        let request = stream::Open {
+            request_id: aap_types::ids::random_id(16).unwrap(),
+            resource: "client-fixture".into(),
+        };
+        let Admission::New(pending) = client.open_stream(request.clone()).await.unwrap() else {
+            panic!()
+        };
+        let Connection::Opened(connected) = pending.connect().await.unwrap() else {
+            panic!()
+        };
+        let (mut upstream, _) = listener.accept().await.unwrap();
+        let (mut application, local) = tokio::io::duplex(4);
+        let relay = connected.relay(Box::new(Application(local)));
+        let expected = if action == 0 {
+            let upstream = tokio::spawn(async move {
+                let mut body = Vec::new();
+                upstream.read_to_end(&mut body).await.unwrap();
+                assert_eq!(body, b"\0\xffsent");
+                upstream.write_all(b"\xff\0reply").await.unwrap();
+                upstream.shutdown().await.unwrap();
+            });
+            let relay = tokio::spawn(relay);
+            tokio::time::timeout(Duration::from_secs(3), async {
+                application.write_all(b"\0\xffsent").await.unwrap();
+                application.shutdown().await.unwrap();
+                let mut response = Vec::new();
+                application.read_to_end(&mut response).await.unwrap();
+                assert_eq!(response, b"\xff\0reply");
+                let terminal = relay.await.unwrap().unwrap();
+                assert_eq!(terminal.operation.state, OperationState::Completed);
+                assert_eq!((terminal.sent_bytes, terminal.received_bytes), (6, 7));
+                upstream.await.unwrap();
+            })
+            .await
+            .unwrap();
+            OperationState::Completed
+        } else {
+            if action == 1 {
+                assert_eq!(
+                    client
+                        .cancel(request.request_id.clone())
+                        .await
+                        .unwrap()
+                        .state,
+                    OperationState::OutcomeUnknown
+                );
+                let terminal = tokio::time::timeout(Duration::from_secs(2), relay)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(terminal.operation.state, OperationState::OutcomeUnknown);
+                assert_eq!(terminal.cause, stream::Cause::Cancelled);
+                assert_eq!((terminal.sent_bytes, terminal.received_bytes), (0, 0));
+            } else {
+                // Ownership has transferred, but forwarding has never polled.
+                drop(relay);
+            }
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(2), upstream.read(&mut [0]))
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
+            OperationState::OutcomeUnknown
+        };
+        let status = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let status = client
+                    .request_status(request.request_id.clone())
+                    .await
+                    .unwrap();
+                if status.state == expected {
+                    break status;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(status.state, expected);
+        let Admission::Existing(duplicate) = client.open_stream(request).await.unwrap() else {
+            panic!("duplicate client call reattached")
+        };
+        assert_eq!(duplicate.state, expected);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+    assert!(fixture.origin.requests.lock().unwrap().is_empty());
+    stop(&mut child).await;
+}
 
 async fn open_wire(
     path: &std::path::Path,

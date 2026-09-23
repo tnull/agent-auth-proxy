@@ -1,8 +1,8 @@
 # Local TCP stream binding, version 1
 
 Status: W7 wire contract. Pure DTO/framing validation, trusted engine relay,
-the runtime-neutral service seam, and the daemon session upgrade are implemented.
-Agent client integration and full acceptance remain pending; see
+the runtime-neutral service seam, daemon session upgrade, and credential-free
+client are implemented. Full acceptance remains pending; see
 [current server coverage](../docs/tcp.md). This binds
 [`stream.open`](tcp.md) to the existing session attachment. It changes neither
 upstream authentication nor the credential-store interface. Project names and
@@ -279,6 +279,6 @@ checks](tcp.md#crate-ownership-and-acceptance), plus:
   for a trusted embedded consumer. Parser-only tests do not prove confinement.
 
 Use the existing dependency stack and synthetic fixtures. The current listener
-supports the endpoint and reserved work/control capacity, but this contract
-does not certify the pending client, complete adversarial acceptance, or the
-external confinement boundary.
+supports the endpoint and reserved work/control capacity, and its client passes
+initial real-daemon checks. This does not certify complete
+adversarial acceptance, independent reuse, or the external confinement boundary.

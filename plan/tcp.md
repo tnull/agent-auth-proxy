@@ -2,8 +2,9 @@
 
 Status: W7 contract. Enrollment, framing, single-attempt connection, engine-owned
 duplex lifecycle/observation, and the daemon session upgrade are implemented.
-The credential-free client, full adversarial acceptance, and actual confinement
-remain pending; see [current server coverage](../docs/tcp.md). Keep the existing
+The credential-free client also has real-daemon coverage. Full adversarial
+acceptance and actual confinement remain pending; see
+[current coverage](../docs/tcp.md). Keep the existing
 project and crate names. This extends the [architecture](architecture.md) and
 [common operation contract](protocol-common.md); it introduces neither an
 authentication scheme nor a new secret-store backend.

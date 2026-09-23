@@ -48,8 +48,9 @@ ten seconds; a call/stream is bounded to 630 seconds and 32 MiB, with 65-second
 stream inactivity. A broken connection after sending is conservatively uncertain.
 Use explicit status/cancel calls; disconnect alone is not proof of remote rollback.
 Server shutdown cancels listener work and drops in-flight execution futures.
-The TCP endpoint is implemented server-side; its agent client support remains
-pending and must not reuse these ordinary HTTP client timeout assumptions.
+The [TCP client](../crates/aap-client/README.md#tcp-streams) uses distinct opening,
+approval/preparation, connected, and final-control deadlines. It does not reuse
+these ordinary HTTP client timeout assumptions.
 
 The [daemon/operator composition](daemon.md) uses distinct private listeners.
 Provider-compatible path mounts remain separate work. Inspected HTTPS CONNECT

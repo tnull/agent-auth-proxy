@@ -1,7 +1,9 @@
 # Credential-free TCP client delivery plan
 
-Status: proposed next W7 integration step, not completed client support. Keep
-the existing names. This document refines the client side of the
+Status: W7 client delivery contract. The first client and real-daemon fixture
+are implemented; broader acceptance and independent reuse/confinement remain
+pending. See [current client coverage](../crates/aap-client/README.md#tcp-streams).
+Keep the existing names. This document refines the client side of the
 [local TCP binding](tcp-binding.md) without changing its wire format, introducing
 an authentication protocol, or granting the client access to credentials.
 

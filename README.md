@@ -30,7 +30,8 @@ subscriptions with isolated cursors and acknowledgments. Complete remote MCP, TC
 complete connection coverage, and confinement demonstrations remain pending.
 The [TCP endpoint](docs/tcp.md) now supports enrolled, bounded binary streams
 through the daemon with safe observation, explicit half-close, and retained
-terminal status. The agent client and confinement demonstration remain pending.
+terminal status. The credential-free client now uses that endpoint; broader
+adversarial acceptance and the confinement demonstration remain pending.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
 upstream contexts. Real HTTPS initialization/list/call, admitted control replies,

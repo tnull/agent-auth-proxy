@@ -3,8 +3,8 @@
 The daemon now implements the server side of the
 [version 1 stream binding](../plan/tcp-binding.md). This is a separately enrolled,
 credential-free byte relay, not automatic authentication for arbitrary TCP.
-The agent client API, broader adversarial acceptance, and actual confinement
-demonstration remain pending; this does not complete W7.
+The credential-free client now uses that endpoint. Broader adversarial acceptance
+and actual confinement demonstration remain pending; this does not complete W7.
 
 ## Enrollment and opening
 
@@ -93,6 +93,16 @@ opaque, or metadata-only inspection without inventing application semantics.
 Raw TCP does not authenticate an upstream peer or provide TLS confidentiality.
 
 ## Verification and reuse
+
+`DaemonSessionClient::open_stream` supplies the matching credential-free client.
+See [its contract](../crates/aap-client/README.md#tcp-streams) for owned handles,
+phase deadlines, framing validation, and the distinction between daemon outcome
+and local application delivery. Status/cancel use independent connections and
+never reconnect the stream. The client has no engine/store dependency.
+
+`cargo test -p aap-daemon --test process daemon_tcp_client` exercises binary
+request/reply, explicit half-close, cancellation through a separate connection,
+drop before the relay future polls, and duplicate status without reattachment.
 
 `cargo test -p aap-daemon --test process daemon_tcp_upgrade` exercises the real
 daemon/socket, binary forwarding, explicit half-close, final status, duplicate

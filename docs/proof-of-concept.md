@@ -1124,3 +1124,57 @@ no external package was added. Client delivery, broader adversarial/shared-limit
 acceptance, reuse examples, and actual confinement still prevent a complete W7
 or proof-of-concept claim. See [the implemented endpoint](tcp.md) for its exact
 current scope.
+
+## Credential-free TCP client
+
+`DaemonSessionClient` now implements the same owned stream service as the engine,
+over the real session Upgrade endpoint. Strict response validation distinguishes
+new admission, existing status, and safe errors before handing bounded read-ahead
+to the common frame decoder. Identity, narrowed limits, explicit directional
+ends, terminal sequence, and actual-written counter bounds are checked locally.
+There is one opening attempt, no redirect or direct upstream connector, and no
+automatic reconnect, reattachment, or replay.
+
+The client has one attachment owner through pending, connected, and relaying
+states. Moving that owner does not restart deadlines. Immediate relay ownership,
+drop/abort cleanup, and an owner-scoped watchdog release sockets and application
+state even when the consumer never polls again. Only bounded control input is
+retained before OPENED. Connected forwarding uses bounded bidirectional buffers
+and per-poll work; explicit half-close keeps the terminal control path alive.
+Connection/preparation and connected timeouts remain distinct from ordinary HTTP.
+
+Client delivery errors never invent a daemon outcome. A valid abnormal terminal
+can be reported without claiming complete delivery; missing/truncated terminal
+records and failed application writes remain local errors. Errors retain the
+original request ID for separate status/cancel calls. A later completed status
+does not recover lost application bytes or authorize a replacement attachment.
+
+Thirteen client tests cover real synthetic session sockets, strict HTTP/control
+identity, split/coalesced input, binary duplex with both end orders, existing
+status, missing/impossible terminal records, and no retry. Owned-state tests
+also cover unpolled expiry/drop/abort, actual partial-write counter bounds,
+cross-frame byte ceilings, invalid callbacks, and application delivery failure.
+The first three tests failed against the unsupported client before implementation.
+Later tests exposed immediate-terminal handling after a written SEND_END,
+case-sensitive close-token validation, missing request IDs on owned-handle
+errors, and retained caller-task wakeups after completed polls before their
+corrections. Remaining passing draft checks are conformance
+evidence, not additional regression discoveries.
+
+An additional daemon process test uses the public client for binary request/reply,
+explicit send-end, independent cancellation, and drop before relay polling. It
+checks retained status and duplicate results after all three paths, with no
+additional upstream accepts. The inspected HTTPS fixture receives no TCP traffic.
+This supplements, rather than replaces, the raw-wire daemon endpoint test.
+That fixture's malformed-header cases now deliberately withhold their bodies
+and require early rejection. This avoids racing a body write against a valid
+server close while preserving rejection and no-operation-admission assertions.
+
+All 276 unit tests, nineteen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0, with all-target checks on both. Stable formatting,
+warning-free Clippy, and warning-free documentation pass. The client uses the
+already-present `httparse` package directly and explicit Tokio I/O/sync/macro
+features; no external package or custody dependency was added. Its normal/build
+dependency tree and package-only check contain no trusted engine/store code.
+Full allocation/concurrency/loss-injection acceptance, independent consumer and
+embedding parity, and the actual sandbox proof remain incomplete W7/W8 gates.

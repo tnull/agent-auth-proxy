@@ -1,4 +1,8 @@
 //! Agent-safe local client without any credential-custody dependency.
+mod stream;
+#[cfg(all(test, unix))]
+mod tests;
+
 use aap_types::*;
 use bytes::Bytes;
 use http_body::{Body as BodyTrait, Frame};
@@ -113,6 +117,12 @@ impl DaemonSessionClient {
     }
 }
 impl AgentService for DaemonSessionClient {
+    fn open_stream(
+        &self,
+        request: aap_types::stream::Open,
+    ) -> BoxFuture<'_, Result<aap_types::stream::service::Admission>> {
+        Box::pin(stream::opening::open(&self.path, request))
+    }
     fn execute(&self, request: ExecuteRequest) -> BoxFuture<'_, Result<Response>> {
         Box::pin(async move {
             self.call(

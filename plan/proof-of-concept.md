@@ -60,7 +60,8 @@ approval, and observation acceptance checks are W7 gates. An arbitrary raw
 channel does not prove plaintext inspection or per-action authorization.
 The [local wire binding](tcp-binding.md) adds strict HTTP upgrade and binary-frame
 fixtures, explicit terminal delivery, and reserved control capacity. Its daemon
-endpoint now exists; the client and full acceptance remain separate gates.
+endpoint and credential-free client now exist; full acceptance remains a
+separate gate.
 See [current coverage](../docs/tcp.md), not this proposed scope, for evidence.
 
 ## Initial finite limits

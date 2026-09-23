@@ -24,13 +24,13 @@ These pure contracts do not dial or grant access. Their owner must reserve
 aggregate buffers, bound retained frames, enforce deadlines and cancellation,
 and track actual accepted socket writes separately from admitted frame bytes.
 Reserve that memory before invoking a decoder. The engine now provides trusted
-native-I/O relay integration; HTTP upgrade is implemented in `aap-http`, while
-agent client support remains pending.
+native-I/O relay integration; HTTP upgrade is implemented in `aap-http` and its
+credential-free client in `aap-client`. Full acceptance remains separate.
 
 `AgentService::open_stream` and `stream::service` separate admission from
 connection and forwarding through owned, non-cloneable handles. The engine
-implements this seam; other adapters explicitly reject it by default. Admission
-reports an existing operation or its sole pending attachment. Connection then
+and daemon client implement this seam; other adapters reject it by default.
+Admission reports an existing operation or its sole pending attachment. Connection then
 reports safe opening metadata or a terminal result. Adapter delivery failure
 is a separate error, never invented success or a retry instruction.
 
