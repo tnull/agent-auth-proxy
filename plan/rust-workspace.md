@@ -227,6 +227,11 @@ Keep broker-wide closure and resource-drain reporting on the trusted-host API,
 not `AgentService`. The [lifecycle contract](lifecycle.md) defines the ownership
 and race requirements without selecting signatures or another crate. A shared
 store is not implicitly locked when one of its consuming brokers closes.
+The engine supplies irreversible authority retirement; daemon and embedding
+hosts coordinate candidate publication, bounded retired-generation ownership,
+and operator outcomes. Adapter/store lifecycle reporting feeds that accounting
+without depending on the daemon. Keep this split in the existing crates; do not
+introduce a reload framework or a new dependency for task accounting.
 
 ## Rust and dependency policy
 

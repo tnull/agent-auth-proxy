@@ -197,6 +197,112 @@ contract. Failure in subsequent cleanup is reported as a committed reload with
 incomplete cleanup, not a failed reload that supposedly left the old generation
 active. It cannot restore old sessions or silently roll authority back.
 
+## Generation replacement and operator outcomes
+
+The first daemon reload retires **all** sessions and scoped observer attachments,
+including those whose grants are unchanged. The launcher must create fresh
+attachments under the new generation. Selective migration is deferred: do not
+transfer placeholders, cookies, pending approvals, operation handles, or remote
+MCP sessions to a new broker. A configuration revision does not replace the
+daemon epoch used to distinguish process incarnations.
+
+Separate three responsibilities without prescribing Rust signatures:
+
+1. **Prepare:** load and validate the complete private configuration/catalog
+   pair, revision, restart-only settings, and candidate composition. Reserve
+   bounded retirement capacity before changing current authority. The candidate
+   is not reachable by agents. Preparation must not resolve passwords, dispatch
+   upstream requests, solicit approval, or change shared store state.
+2. **Commit:** order old-broker admission closure and candidate publication with
+   host attachment creation and shutdown. Every old clone becomes unusable,
+   including handles absent from the daemon's attachment map. A racing dispatch
+   or completion follows the engine's existing authority ordering. New host
+   requests observe either the old generation before commitment or the new one
+   afterward, never a candidate paired with old grants. All ordinary fallible
+   preparation precedes this short boundary; it contains no native calls,
+   observation delivery, task joins, or external callbacks.
+3. **Retire:** initiate cancellation for every affected attachment and retain
+   ownership of its tasks, connections, and native work until accounted for.
+   Attempt independent cleanup steps even when one fails. Drain outside the
+   publication boundary. Never reopen the old broker or lock a store still used
+   by the new broker.
+
+The authority transition must not depend on successfully cancelling or joining
+each individual session. Conversely, merely removing listeners is not authority
+retirement: retained embedded or adapter handles must reject work too. Fatal
+failure after authority closure cannot be treated as rejection with the old
+generation unchanged; leave the host closed and report unavailability if the
+candidate cannot be made available.
+
+The trusted operator contract must distinguish these outcomes. These are
+required facts, not a finalized wire representation or new agent API:
+
+| Outcome | Required facts and operator interpretation |
+| --- | --- |
+| Rejected before commitment | Safe reason and current revision/host state; this attempt did not change authority; an invalid policy update has not revoked the existing grants |
+| Committed, cleanup pending | Installed revision, retired revision, and confirmation that old authority is closed; fresh attachments may use the new generation |
+| Committed, drained | Same commitment evidence plus confirmed release of the retired generation's owned resources |
+| Committed, cleanup incomplete | Same commitment evidence plus bounded failure/deadline information; the new generation remains installed and the old one stays closed |
+| Host unavailable after retirement | Report closed/unavailable, not an unchanged active generation or a successful installation; recovery requires fresh authority |
+
+Keep commitment separate from cleanup state in both the reload response and
+trusted status. A generic error after commitment must not imply that nothing
+changed. Expose only revisions, lifecycle states, bounded resource counts, and
+safe reason codes; never item references, secrets, native errors, or payloads.
+
+An operator disconnect before commitment may cancel preparation without
+changing authority. After commitment, the host owns retirement even if the
+request future is dropped or its response cannot be delivered. A missing reply
+means the caller does not know the outcome. It must query status using the
+daemon epoch and revision before deciding on another update; never automatically
+replay reload or claim rollback. Bounded in-memory status is sufficient for the
+first proof of concept; restart invalidates old sessions and does not promise a
+durable history of reload acknowledgments.
+If the requested outcome is no longer retained, report it as unknown rather
+than inferring rejection from the absence of a record.
+
+Serialize reload commitment with host shutdown. If shutdown wins, a prepared
+candidate is discarded and cannot reopen admission. If reload wins, shutdown
+closes the new generation and accounts for both it and any retired work. A
+rejected reload does not promise that unrelated revocation or shutdown left the
+old generation active.
+
+## Bounded retirement and shutdown accounting
+
+Initially permit at most one not-yet-drained retired generation alongside the
+active generation. A subsequent reload returns a safe busy outcome before
+commitment until retained resources are confirmed stopped. Timeout does not
+free this capacity by forgetting live work. This deliberately bounds retained
+state; a stuck backend may require controlled process replacement before
+another reload. A bounded summary may outlive released resources without
+occupying the retirement slot. Host-wide resource limits include active and
+retired work, rather than resetting quotas whenever a new broker is installed.
+
+The two-second cooperative budget applies to retirement from commitment and to
+whole-host shutdown from initiation. Record an absolute monotonic deadline and
+pass only its remaining time to every owned cleanup phase, including runtime
+teardown. Do not add a second runtime grace period after the daemon's wait.
+Shutdown accounts for already-retiring work without extending its prior
+deadline; repeated requests do not renew either budget. An expired deadline
+permits immediate bounded cancellation/reporting, not another full wait.
+
+A drain report must account separately for listeners/attachment tasks, upstream
+connection drivers and held response bodies, TCP/MCP work, observation delivery,
+and native store jobs. Task abortion, dropping a join handle, or expiring a
+timeout is not proof of completion. Retain cleanup ownership and native capacity
+until termination is confirmed, even when the waiting operator has gone away.
+Report unknown or incomplete work honestly; do not sum counters from only the
+currently active generation and call the host drained.
+
+Revoked scoped collectors cannot regain access to the new generation. Retained
+old-generation endings may still be delivered through the separately authorized
+host observation path, within the remaining budget and existing loss contract.
+Collector acknowledgment is distinct from resource termination. Neither an
+unavailable collector nor failure to lock an exclusively owned store may hide
+another cleanup failure or extend the aggregate wait. Libraries never stop an
+embedding host's shared runtime; the host includes its own teardown obligations
+when making a whole-service shutdown claim.
+
 ## Acceptance cases and delivery order
 
 Use controlled origins, counted store calls, explicit barriers, and independent
@@ -214,6 +320,29 @@ Returning a local error is insufficient evidence that nothing was dispatched.
 | L7: ownership isolation | Two brokers sharing a store work before closure; closing one leaves the other's permitted operations and store access functional |
 | L8: partial failure | A stuck native call, blocked collector, or cleanup failure cannot keep other sessions authorized; total waiting is bounded and incomplete cleanup is reported |
 | L9: restart and reload | Fresh generations reject old handles/approvals; invalid candidate configuration does not revoke the valid generation; retirement never resurrects old authority |
+
+### L9 generation replacement acceptance cases
+
+Use daemon operator requests and a trusted embedding composition with equivalent
+generation ownership. Place deterministic barriers at preparation, commitment,
+and retirement, not just delays around a reload call.
+
+| Case | Required evidence |
+| --- | --- |
+| R1: preparation rejection | Invalid/mixed/stale configuration, restart-only changes, or busy retirement leave this attempt's current authority untouched; a positive old-session request still reaches the origin when no independent revocation occurs |
+| R2: committed replacement | New sessions use only the installed revision; retained old broker/session clones, placeholders, approval decisions, and scoped observers cannot act; count store calls and origin receipts, not just local errors |
+| R3: cleanup failure | Inject one attachment/observation cleanup failure after commitment; cancellation still reaches the others; status reports the installed revision and incomplete retirement, never an unapplied reload |
+| R4: lost caller | Drop the operator connection immediately before and after commitment; status disambiguates the outcome, host-owned cleanup continues after commitment, and no duplicate upstream work is triggered |
+| R5: shutdown race | Test both orderings with a fully prepared candidate; shutdown prevents later publication or closes the newly published broker, and all retained authority remains closed |
+| R6: bounded retention | Keep retired work alive past its deadline; reject another reload before changing the active revision, preserve its resource accounting, and allow reload again only after actual termination |
+
+For L5/L8, retain an unpolled body, a half-closed TCP relay, a live MCP stream,
+a blocked collector, and a controlled non-interruptible native job. Verify each
+case separately and then together. Assert one aggregate deadline, including
+runtime teardown, with a declared scheduling tolerance; do not accumulate a
+fresh wait per phase. Compare actual task/socket termination and native-job
+counts with the reported outcome. Include an independent broker using the same
+store to prove that retirement does not lock it or cancel its work.
 
 ### L6 completion acceptance cases
 

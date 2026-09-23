@@ -1,6 +1,6 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.10. Updated on 2026-09-23.
+Status: proposed design, version 0.11. Updated on 2026-09-23.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
@@ -34,7 +34,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Observability](observability.md) | Stream events, redaction, ordering, backpressure, and consumer isolation |
 | [Rust workspace](rust-workspace.md) | Reusable crate boundaries, minimal dependencies, daemon and embedding APIs |
 | [Reuse and integration](reuse.md) | Independent consumers, trusted-host responsibilities, first-slice acceptance cases, shared behavioral tests, and dependency-isolation gates |
-| [Broker lifecycle](lifecycle.md) | Admission closure, dispatch/completion races, provisional authentication state, coherent observation endings, and bounded shutdown acceptance |
+| [Broker lifecycle](lifecycle.md) | Admission closure, dispatch/completion races, private-state publication, generation replacement, operator outcomes, and bounded cleanup acceptance |
 | [Implementation](implementation.md) | Git/Cargo setup, ordered work packages, security checks, and release gates |
 | [First proof of concept](proof-of-concept.md) | Proposed initial coverage, finite limits, demonstration gates, and explicit exclusions |
 | [Sources and integration findings](references.md) | Standards assessment and evidence from Loupe and Goose |
@@ -95,6 +95,7 @@ recipient cannot be eliminated by response filtering.
 | Observation | Redacted logical streams by default; bounded export, explicit loss semantics, no detector built into this scope |
 | Human interaction | Async engine approval interface, restrictive global/session/item/action policy, and immutable decisions; production UI/signing follow later |
 | Catalog | Private versioned JSON separate from credentials; paired configuration revisions and atomic in-memory reload |
+| Reload and shutdown | Irreversible old-authority retirement; distinguish committed replacement from cleanup results; bounded ownership and one aggregate shutdown deadline |
 | Maintenance | Explicit trusted administration; first SQLite backup/restore/migration/key-rotation workflow is offline, with verified encrypted recovery copies |
 
 ## Scope and limits

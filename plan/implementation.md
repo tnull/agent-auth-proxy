@@ -180,15 +180,17 @@ descriptor-based ownership/type/mode checks, safe paths, and private atomic
 updates. Reject unsafe files at startup and reload; see
 [catalog privacy](secret-stores.md#private-catalog-and-policy-metadata).
 Validate the entire configuration before accepting traffic. A reload installs a
-new validated generation atomically; removed grants/items revoke related work
-and contexts. Failed reloads leave the previous valid configuration active and
-report a safe operator error.
+new validated generation atomically; the first daemon retires all old sessions
+and scoped observers, including unchanged grants. Rejection before commitment
+does not change current authority. Cleanup failure after commitment preserves
+the installed generation and closed old authority, with a distinct safe outcome.
 
 The catalog and daemon configuration carry a shared `configuration_revision`.
 Reject mismatched pairs on startup/reload; replace them as private files and
 publish only one validated in-memory generation. Document interrupted-update
-recovery explicitly. A failed reload is not successful revocation: report that
-the prior generation remains active so the operator can revoke or stop it.
+recovery explicitly. A rejected reload is not successful revocation: report the
+actual host state and revision so the operator can revoke or stop it. A lost
+acknowledgment requires status reconciliation, not an automatic retry.
 
 The daemon owns signals, process logging setup, configured store connections,
 and listener lifetimes. Libraries own their behavior and expose cancellation
@@ -213,6 +215,18 @@ website cookie/CSRF publication, remote MCP handshake transitions, and local
 placeholder publication. Run [C1–C6](lifecycle.md#l6-completion-acceptance-cases)
 through daemon and embedded fixtures before closing L6. No new crate,
 transaction framework, or dependency is required by this contract.
+
+Deliver [generation replacement](lifecycle.md#generation-replacement-and-operator-outcomes)
+as the next lifecycle slice: test pre-commit rejection, complete old-broker
+retirement, post-commit cleanup failures, operator disconnect, and shutdown
+races (R1–R6). The engine owns the irreversible authority boundary; daemon and
+embedding hosts own candidate publication and retirement tracking. Adapters and
+stores expose their cleanup accounting without acquiring control-plane policy.
+Keep retained work bounded across generations and never lock a shared store
+during reload. Then establish the L5/L8 aggregate deadline and held-resource
+matrix, including runtime teardown. Use existing crates and dependencies; choose
+Rust signatures and the operator response schema during that implementation
+slice, without changing the agent-facing protocol.
 
 ## W5–W6: password-manager vertical slice
 

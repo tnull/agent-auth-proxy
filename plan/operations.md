@@ -89,9 +89,13 @@ handled on detection according to the backend's documented revalidation limits;
 do not claim an atomic transaction with changes made by another application.
 
 An operator revocation acknowledgment means local admission is closed, not that
-the upstream has rolled back anything. Failed configuration reload leaves the
-previous generation active: use explicit session revocation or stop the daemon
-when a policy change must take effect immediately. Unlocking a store never
+the upstream has rolled back anything. A configuration reload rejected before
+commitment does not revoke the previous generation: use explicit session
+revocation or stop the daemon when a policy change must take effect immediately.
+Cleanup failure after commitment does not undo the installed configuration or
+reopen retired authority. A missing reload reply requires a trusted status
+check, not an automatic retry. The [lifecycle contract](lifecycle.md) separates
+commitment, bounded retirement, and confirmed drain. Unlocking a store never
 automatically approves or replays previously pending agent requests.
 
 ## First maintenance boundary

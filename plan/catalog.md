@@ -136,10 +136,18 @@ Matching revisions detect mixed updates, not restoration of an entire older
 pair. They are not cryptographic integrity or rollback protection against an
 operator/host that can replace both files.
 
-A failed reload leaves the previous generation active and reports a safe
-failure; it is not evidence that a requested revocation took effect. The
-operator must verify successful reload or explicitly revoke/stop affected
-sessions through the independent control plane.
+A reload rejected before commitment does not change the previous generation;
+it is not evidence that a requested revocation took effect. The operator must
+verify commitment or explicitly revoke/stop affected sessions through the
+independent control plane. Unrelated revocation or shutdown can still close
+that generation while a candidate is being validated.
+
+After commitment, cleanup failure is reported separately: the new generation
+remains installed and retired authority stays closed. A lost operator response
+does not prove rejection. Query trusted status for the daemon epoch, active
+revision, and retirement outcome before deciding on another update. Follow the
+[generation replacement contract](lifecycle.md#generation-replacement-and-operator-outcomes);
+never restore old authority to compensate for incomplete cleanup.
 
 On successful reload, invalidate contexts and pending work for removed or
 changed item/profile bindings. Changes to store references, credential field
@@ -148,6 +156,8 @@ preparation. Recheck remaining operations against current grants before
 dispatch. Do not mutate a queued operation into different work. Native item
 rotation is detected through the store contract, independently of catalog
 reload. Unenrollment removes the binding, never the existing Keychain item.
+The first daemon conservatively revokes all sessions and scoped observers on
+replacement, including unchanged bindings; selective migration is deferred.
 
 The [operator lifecycle](operations.md) defines partial enrollment failures,
 the distinction between unenrollment and native deletion, and recovery without
@@ -166,5 +176,7 @@ are separate transactions; neither may imply success of the other.
   installed, and recovery never silently restores older authority.
 - Tightening policy or removing an item blocks new dispatch and prevents late
   responses from reviving its private cookie context.
+- Distinguish pre-commit rejection from post-commit cleanup failure and lost
+  acknowledgments; installed revisions and closed authority never roll back.
 - Agent discovery exposes only authorized projections, never this document's
   full item representation or native store references.
