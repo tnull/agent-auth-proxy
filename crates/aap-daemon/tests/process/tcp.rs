@@ -7,6 +7,7 @@ async fn open_wire(
     path: &std::path::Path,
     operation: &stream::Open,
     extra: &str,
+    send_body: bool,
 ) -> (tokio::net::UnixStream, String) {
     let mut socket = tokio::net::UnixStream::connect(path).await.unwrap();
     let body = serde_json::to_vec(operation).unwrap();
@@ -15,7 +16,9 @@ async fn open_wire(
         body.len()
     );
     socket.write_all(head.as_bytes()).await.unwrap();
-    socket.write_all(&body).await.unwrap();
+    if send_body {
+        socket.write_all(&body).await.unwrap();
+    }
     let mut response = Vec::new();
     tokio::time::timeout(Duration::from_secs(2), async {
         while !response.ends_with(b"\r\n\r\n") {
@@ -66,7 +69,7 @@ async fn daemon_tcp_upgrade_keeps_framing_local_and_status_authoritative() {
         request_id: aap_types::ids::random_id(16).unwrap(),
         resource: "raw-fixture".into(),
     };
-    let (mut socket, response) = open_wire(&path, &request, "").await;
+    let (mut socket, response) = open_wire(&path, &request, "", true).await;
     assert!(
         response.starts_with("HTTP/1.1 101 "),
         "stream was not upgraded: {response}"
@@ -145,7 +148,7 @@ async fn daemon_tcp_upgrade_keeps_framing_local_and_status_authoritative() {
             .state,
         OperationState::Completed
     );
-    let (_, response) = open_wire(&path, &request, "").await;
+    let (_, response) = open_wire(&path, &request, "", true).await;
     assert!(response.starts_with("HTTP/1.1 200 "));
     assert!(
         response
@@ -167,14 +170,16 @@ async fn daemon_tcp_upgrade_keeps_framing_local_and_status_authoritative() {
     ] {
         let mut rejected = request.clone();
         rejected.request_id = aap_types::ids::random_id(16).unwrap();
-        let (_, response) = open_wire(&path, &rejected, extra).await;
+        // Invalid headers must be rejected before any body is needed. Writing
+        // a body here races the legitimate early rejection/connection close.
+        let (_, response) = open_wire(&path, &rejected, extra, false).await;
         assert!(
             response.starts_with("HTTP/1.1 400 "),
             "invalid opening was accepted: {response}"
         );
         assert!(client.request_status(rejected.request_id).await.is_err());
     }
-    let (_, response) = open_wire(&control, &request, "").await;
+    let (_, response) = open_wire(&control, &request, "", false).await;
     assert!(
         !response.starts_with("HTTP/1.1 101 "),
         "operator endpoint accepted a stream"
