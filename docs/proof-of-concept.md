@@ -1344,3 +1344,59 @@ Rustls dependency; the added TLS packages are development-only.
 Full protocol/physical-connection observation, the remaining confinement
 matrix, operational recovery, independent embedding demonstrations, and native
 Keychain delivery remain open; W0-W9 are not marked complete.
+
+## Independent public-API consumers
+
+The first W8 delivery adds separate client and embedded SQLCipher consumer
+workspaces with explicit manifests, committed lockfiles, READMEs, and a shared
+credential-free scenario driver. No production crate, public export, or new
+registry package/version was needed. Their source dependencies come from this
+checkout; their lockfiles do not inherit the root workspace's feature selection.
+See [the integration guide](reuse.md) and
+[runnable commands](../examples/reuse/README.md#run-both-consumers).
+
+The actual client executable receives only two admitted socket paths and a
+synthetic origin, runs with a cleared environment, and returns bounded public
+evidence. A separate trusted harness provisions the encrypted store, admits
+sessions, and checks private origin receipts and authorized observations.
+The embedded host opens that same real backend through public composition
+APIs in a caller-owned runtime, without a daemon dependency or implicit startup.
+
+Both paths exercise provider key injection, form and JSON login, private CSRF
+and cookies, two-session separation, logout, revocation, repeated and conflicting
+IDs, policy denials, cancellation, and origin-recorded response loss. Each
+encoding/path combination verifies eight completed and two uncertain operations
+with exactly ten upstream receipts. Repeating completed or uncertain operations
+does not dispatch again. The harness examines twelve complete/partial public
+responses, five discovery/login metadata results, seven typed errors, and
+decoded observations for seeded secrets. Each operation has exactly one
+complete or incomplete ending in each observation view.
+
+Retained embedded clones and daemon client attachments reject work after
+revocation. Additional embedded checks reject a wrong key without damaging
+the existing vault and refuse missing stores without creating replacements.
+The initial composition/scenario tests failed against their example stubs.
+The stronger response-evidence and cancelled-ID checks also failed when the
+driver omitted that evidence, then passed after it was supplied. These are
+example/conformance checks, not newly discovered production regression fixes.
+
+The three independent integration tests pass on Rust 1.95.0 and 1.88.0; each
+client run uses a daemon built with the matching compiler. Separate normal
+builds and dependency checks pass on both. The client normal/build closure has
+no credential-custody, configuration, store, or trusted upstream component;
+the embedded closure contains neither the daemon nor test support. All resolved
+third-party package versions already occur in the root lockfile. Stable example
+formatting, warning-free Clippy, and warning-free documentation pass. The new
+CI matrix records these gates; remote CI has not been run.
+
+Root all-target checks, all 276 unit tests, nineteen ordinary daemon process
+tests, and the compile-fail doctest pass on both compilers. Root formatting,
+Clippy, and warning-free documentation pass on 1.95.0. Six opt-in confinement
+tests were not rerun in this delivery; their preceding evidence is separate.
+No personal credentials, global trust changes, or Goose/Loupe changes were used.
+
+The first R1-R8 reuse slice is demonstrated, but W8 remains open. This does not
+prove counted pre-resolution denial, two-account isolation, custom store/approval
+composition, full shutdown and shared quotas, remote MCP/TCP equivalence, or
+OS confinement of these executables. Those scenarios and the remaining custody,
+observation, confinement, and native Keychain gates are still required.

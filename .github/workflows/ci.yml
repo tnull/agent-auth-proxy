@@ -23,3 +23,52 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install 1.88.0 --profile minimal
       - run: cargo +1.88.0 check --workspace --all-targets --locked
+  reuse:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["1.95.0", "1.88.0"]
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+      CARGO_TARGET_DIR: /tmp/cargo-target-aap-reuse-${{ github.run_id }}-${{ matrix.toolchain }}
+      AAP_DAEMON: /tmp/cargo-target-aap-reuse-${{ github.run_id }}-${{ matrix.toolchain }}/daemon/debug/agent-auth-proxy
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install "${{ matrix.toolchain }}" --profile minimal --component rustfmt --component clippy
+      - name: Build the actual daemon
+        run: CARGO_TARGET_DIR="$CARGO_TARGET_DIR/daemon" cargo build -p aap-daemon --bin agent-auth-proxy --locked
+      - name: Check independent workspace and dependency boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for consumer in client embedded; do
+            manifest="examples/reuse/$consumer/Cargo.toml"
+            test "$(cargo locate-project --manifest-path "$manifest" --workspace --message-format plain)" = "$GITHUB_WORKSPACE/$manifest"
+            dependencies=$(cargo tree --manifest-path "$manifest" --locked --edges normal,build --prefix none)
+            if test "$consumer" = client; then
+              forbidden='^(aap-(engine|auth|secrets|config|policy|observe|providers|transport|daemon|mcp(-upstream)?|store-[^ ]+|test-support)|rusqlite|libsqlite3-sys|security-framework(-sys)?|rustls) '
+            else
+              forbidden='^(aap-daemon|aap-test-support) '
+            fi
+            if printf '%s\n' "$dependencies" | grep -E "$forbidden"; then
+              exit 1
+            fi
+          done
+      - name: Build normal consumers without test features
+        run: |
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/client" cargo build --manifest-path examples/reuse/client/Cargo.toml --locked --bin reuse-client
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/embedded" cargo build --manifest-path examples/reuse/embedded/Cargo.toml --locked --lib
+      - name: Run independent conformance tests
+        run: |
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/client" cargo test --manifest-path examples/reuse/client/Cargo.toml --locked
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/embedded" cargo test --manifest-path examples/reuse/embedded/Cargo.toml --locked
+      - name: Format, lint, and document consumers
+        if: matrix.toolchain == '1.95.0'
+        run: |
+          rustfmt --edition 2024 --check examples/reuse/support/scenarios.rs examples/reuse/support/fixture.rs
+          for consumer in client embedded; do
+            manifest="examples/reuse/$consumer/Cargo.toml"
+            cargo fmt --manifest-path "$manifest" --all -- --check
+            CARGO_TARGET_DIR="$CARGO_TARGET_DIR/$consumer" cargo clippy --manifest-path "$manifest" --all-targets --locked -- -D warnings
+            CARGO_TARGET_DIR="$CARGO_TARGET_DIR/$consumer" RUSTDOCFLAGS=-Dwarnings cargo doc --manifest-path "$manifest" --no-deps --locked
+          done

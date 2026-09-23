@@ -1,0 +1,37 @@
+[package]
+name = "reuse-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+aap-client = { path = "../../../crates/aap-client" }
+aap-types = { path = "../../../crates/aap-types" }
+base64 = "0.22"
+http-body-util = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["rt", "time"] }
+
+[dev-dependencies]
+aap-config = { path = "../../../crates/aap-config" }
+aap-observe = { path = "../../../crates/aap-observe" }
+aap-policy = { path = "../../../crates/aap-policy" }
+aap-secrets = { path = "../../../crates/aap-secrets" }
+aap-store-sqlite = { path = "../../../crates/aap-store-sqlite" }
+aap-test-support = { path = "../../../crates/aap-test-support" }
+bytes = "1"
+http = "1"
+hyper = { version = "1", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+rustix = { version = "1", features = ["process"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "net", "process", "io-util"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+[lints.clippy]
+all = "warn"

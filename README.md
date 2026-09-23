@@ -12,6 +12,9 @@ The agent-facing client must never acquire a dependency on credential custody.
 The planned daemon defaults are native Keychain on macOS and encrypted SQLite
 elsewhere. SQLCipher custody is implemented; the macOS adapter is still pending.
 The store interface remains backend-neutral.
+Independent [client and embedded-host examples](docs/reuse.md) now exercise
+shared provider/form/JSON scenarios through public APIs. Their separate Cargo
+workspaces must be built and tested explicitly; the full reuse matrix is pending.
 
 The first provider slice now runs through a standalone Linux daemon, from
 session admission through SQLCipher key retrieval and verified HTTPS to
