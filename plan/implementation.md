@@ -315,6 +315,12 @@ dependencies inside the platform adapter, out of the portable core and
 agent-client dependency closures. A macOS release also needs a separately
 verified sandbox/egress boundary; passing store tests alone is insufficient.
 
+Follow the [Keychain delivery sequence](keychain.md#ordered-delivery-and-acceptance):
+establish the native compatibility and lease/mutation guarantees first, then
+deliver shared conformance, the adapter/enrollment path, bounded lifecycle, and
+daemon/embedded parity. Native host testing and macOS confinement remain explicit
+release gates. Do not treat a portable mock or a get/set wrapper as W9 completion.
+
 ## Verification and CI
 
 Apply the [security review matrix](security-review.md#adversarial-review-matrix)

@@ -26,6 +26,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Local TCP binding](tcp-binding.md) | Session-socket upgrade, binary frames, half-close, terminal outcomes, and control-capacity requirements |
 | [TCP client delivery](tcp-client.md) | Credential-free client ownership, strict responses, local versus daemon outcomes, and ordered integration checks |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
+| [Keychain delivery](keychain.md) | Native host/item compatibility, enrollment identity, approval separation, bounded work, and ordered macOS acceptance gates |
 | [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
 | [Operator lifecycle](operations.md) | Enrollment, management authority, invalidation, offline maintenance, backup/restore, and recovery gates |
 | [Approval](approval.md) | Async human-in-the-loop interface, policy composition, immutable decisions, and fail-closed behavior |

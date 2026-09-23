@@ -108,6 +108,16 @@ custody and reuse limitations, and `security-framework` documentation for direct
 Rust access. Backend selection is a project decision: Keychain holds the
 credential items on macOS, while encrypted SQLite is the non-macOS default.
 
+The [Keychain delivery plan](keychain.md) additionally uses
+[Apple TN3137](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains),
+[persistent-reference semantics](https://developer.apple.com/documentation/security/ksecreturnpersistentref),
+and [synchronized-item restrictions](https://developer.apple.com/documentation/security/ksecattrsynchronizable)
+(checked 2026-09-23). These distinguish native host and item capabilities from
+project requirements. The proposed per-user deployment, non-synchronized first
+scope, eight-job bound, and K1-K6 acceptance sequence are design choices, not
+guarantees supplied by Apple's APIs. No native macOS tests were run for this
+planning update.
+
 The [operator lifecycle](operations.md) additionally uses the
 [SQLCipher API](https://www.zetetic.net/sqlcipher/sqlcipher-api/) documentation
 (checked 2026-09-23) for keyed-open verification and explicit schema-version

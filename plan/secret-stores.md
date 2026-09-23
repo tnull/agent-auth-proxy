@@ -218,6 +218,12 @@ itself, fall back to SQLite, or copy denied material into a cache. Test native
 access/lock behavior on macOS with isolated test items/keychains, never a
 developer's personal items.
 
+Follow the [Keychain delivery plan](keychain.md) for the initial per-user host
+profile, non-synchronized enrollment scope, persistent identity, native-version
+and management capability checks, bounded worker ownership, and W9 acceptance.
+Broader native compatibility requires its own evidence; direct Rust bindings
+alone do not establish every store-interface guarantee.
+
 ## Acceptance criteria
 
 - The same read/use conformance suite runs against SQLite, the fixture backend,
