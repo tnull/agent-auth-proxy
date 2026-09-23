@@ -12,7 +12,7 @@ use std::{
 #[serde(deny_unknown_fields)]
 pub struct TcpProfile {
     pub id: String,
-    /// Canonical host:port or [IPv6]:port; no URI, userinfo, or implicit port.
+    /// Canonical `host:port` or `[IPv6]:port`; no URI, userinfo, or implicit port.
     pub endpoint: String,
     pub addresses: AddressPolicy,
     pub limits: TcpLimits,
