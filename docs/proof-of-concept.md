@@ -5,6 +5,10 @@ replacement specification. Unchecked items are not implemented or verified.
 The end-to-end proof must use real transports and the encrypted store, not
 only mocked component tests. Tests use synthetic credentials and local origins.
 
+The user's immediate small-demo checkpoint is now available through
+[`scripts/demo.sh`](../scripts/demo.sh); see [the hands-on guide](demo.md).
+This is distinct from completing every broader acceptance gate below.
+
 ## Completion checklist
 
 - [ ] W0: Git-managed workspace, documented crates, toolchain, CI and dependency checks.
@@ -1910,3 +1914,46 @@ All ten independent consumer tests and all six opt-in Linux confinement tests
 also pass on each compiler: 369 tests per compiler in total. Confinement runs
 were serial without competing build/test workloads. Formatting, warning-free
 Clippy, and public documentation builds pass on 1.95.0.
+
+## Runnable small-demo checkpoint
+
+Following the user's request to prioritize first experiments and defer macOS,
+`scripts/demo.sh` now builds and runs a development-only Rust example around
+the actual standalone daemon. It provisions a persistent synthetic SQLCipher
+vault, starts an allowlisted local HTTPS fixture, and generates owner-private
+MCP settings and an agent prompt. `serve` keeps a one-hour session alive with
+redacted observation JSON on stdout; `smoke` verifies and exits; `check` repeats
+the walkthrough against an already running session. No production dependency,
+daemon wire protocol, personal credential, or system trust installation changed.
+
+The walkthrough uses a real stdio MCP subprocess for initialization/discovery,
+provider injection, item lookup, placeholder issuance, CSRF, form login, private
+cookies, protected resource access, status, and logout. It requires successful
+upstream authentication, suppressed credential echoes, exactly four upstream
+requests, and a specific `placeholder_invalid` refusal after logout.
+
+The initial bootstrap test failed against the unimplemented entry point and
+passes with the implementation. Two process tests now prove restart with the
+same encrypted vault/key, fresh attachments, owner-only generated files,
+concurrent-launch refusal, unchanged unknown state, rejection without repair
+of an exposed unlock file, and normal session-socket cleanup. Both pass on
+Rust 1.95.0 and 1.88.0, with daemon all-target checks on both. Stable workspace
+all-target check, formatting, Clippy with warnings denied, and all 355 ordinary
+workspace tests pass (333 unit, 21 process, one doctest). Existing opt-in
+confinement and independent-consumer suites were not rerun for this demo-only
+addition; their preceding evidence remains separate.
+
+The documented launcher was additionally run in smoke mode and in interactive
+serve mode with a separate-terminal check, visible redacted observations, and
+successful Ctrl-C shutdown. The default state lives in `$HOME/.aap-demo` because
+this checkout's group-writable ancestry correctly rejects a vault beneath it.
+No permissions were loosened. The synthetic state is retained; no demo daemon
+was left running. CI now includes the launcher smoke command; remote CI has
+not been observed.
+
+This checkpoint is ready for controlled manual experiments, not a claim that
+the full checklist above is complete. In particular the convenience unlock key
+is stored beside the synthetic vault, the launcher is not a sandbox, and the
+provider is a fixed local fixture rather than a real model. The guide explicitly
+keeps Keychain, real enrollment/recovery, production confinement, and remaining
+aggregate lifecycle/hardening gates outside this small demo's claims.

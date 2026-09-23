@@ -1,5 +1,21 @@
 # First proof-of-concept scope
 
+## Immediate experiment checkpoint (2026-09-23)
+
+The user requested a small runnable demo as the immediate priority, with macOS
+work deferred. Deliver the [Linux demo](../docs/demo.md): one-command startup,
+persistent synthetic encrypted custody, the actual daemon and stdio MCP bridge,
+provider injection and a complete fake-password/cookie website walkthrough,
+redacted observations, and instructions for manual MCP-client experiments.
+Do not make Keychain or the remaining broad hardening/recovery matrix a
+prerequisite for trying that demo. Its launch workflow is synthetic-only and
+does not claim production enrollment or sandbox enforcement.
+
+The broader acceptance baseline below remains the design target, not a claim
+that every gate is necessary or complete at this smaller experiment checkpoint.
+
+## Broader acceptance baseline
+
 This is the proposed acceptance baseline for the implementation work packages,
 not a report that the capabilities already work. Track actual evidence in
 [the delivery tracker](../docs/proof-of-concept.md). Keep the existing project

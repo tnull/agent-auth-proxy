@@ -25,6 +25,9 @@ Never place the key in a shell command, environment variable, or configuration.
 The CLI does not yet offer interactive provisioning or an OS unlock service.
 The existing store must be provisioned through `aap-store-sqlite` by trusted
 code; the process test demonstrates this with synthetic values only.
+For a runnable synthetic-only bootstrap, use the [demo launcher](demo.md).
+It provisions a persistent demo vault and starts this same standalone binary;
+it is not an interactive production credential-enrollment tool.
 
 `agent-auth-proxy mcp-bridge SESSION_SOCKET` runs the credential-free stdio
 adapter without loading this configuration or opening a store. Its stdin is

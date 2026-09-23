@@ -2,7 +2,14 @@
 
 A Rust proof of concept in development: a trusted daemon mediates sandboxed
 agent traffic, keeps upstream credentials in a pluggable secret store, and
-exports sanitized communication streams. It is not yet ready for use.
+exports sanitized communication streams. A [small Linux demo](docs/demo.md)
+is available for synthetic experiments; production use is not yet supported.
+
+Start the real daemon and a local HTTPS fixture with `./scripts/demo.sh`.
+The launcher provisions a private encrypted demo vault, verifies the provider
+and website flows through stdio MCP, and prints connection instructions.
+Use `./scripts/demo.sh smoke` for a one-shot pass/fail run. No real credentials
+are needed; this launcher does not sandbox your agent.
 
 See [the design](plan/README.md) and the
 [implementation and verification tracker](docs/proof-of-concept.md).
