@@ -3,7 +3,10 @@
 These development-only examples use synthetic credentials and controlled HTTPS
 origins. `client` and `embedded` are separate Cargo workspaces with explicit
 dependencies and their own lockfiles. Neither inherits root workspace features
-or consumer dependency settings. Local path dependencies use this Git checkout;
+or consumer dependency settings. The independent [adapters](adapters/README.md)
+consumer additionally demonstrates a host-supplied test store, async approval,
+and bounded observation handoff without linking a native secret backend.
+Local path dependencies use this Git checkout;
 there is no package publication or dependency on Goose/Loupe.
 
 `support/scenarios.rs` is shared credential-free application code. Both paths
@@ -14,7 +17,7 @@ receipt counters, and observation checks.
 
 The examples demonstrate public API reuse, not OS confinement or production
 packaging. The wider [reuse acceptance matrix](../../plan/reuse.md) remains a
-separate gate, including custom adapters, approvals, remote MCP/TCP, and shared
+separate gate, including shared approval/store failures, remote MCP/TCP, and shared
 quota/shutdown races. See each consumer's README for its trust boundary.
 
 ## Run both consumers
@@ -51,7 +54,7 @@ Formatting and dependency review are also explicit:
 
 ```sh
 rustfmt --edition 2024 --check examples/reuse/support/scenarios.rs examples/reuse/support/fixture.rs
-for consumer in client embedded; do
+for consumer in client embedded adapters; do
   manifest="examples/reuse/$consumer/Cargo.toml"
   cargo fmt --manifest-path "$manifest" --all -- --check
   cargo locate-project --manifest-path "$manifest" --workspace --message-format plain
@@ -64,3 +67,7 @@ done
 The `reuse` CI job checks both compilers, workspace roots, normal dependency
 closures, and real-process tests. Its presence is not evidence that remote CI
 has run. See [current integration evidence](../../docs/reuse.md) for scope.
+
+The [custom-adapter consumer](adapters/README.md) has its own build/test commands.
+It does not need `AAP_DAEMON` or a SQLCipher vault; its fixture store is test-only,
+not an operational alternative to the encrypted/native backends.

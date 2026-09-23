@@ -41,32 +41,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for consumer in client embedded; do
+          for consumer in client embedded adapters; do
             manifest="examples/reuse/$consumer/Cargo.toml"
             test "$(cargo locate-project --manifest-path "$manifest" --workspace --message-format plain)" = "$GITHUB_WORKSPACE/$manifest"
             dependencies=$(cargo tree --manifest-path "$manifest" --locked --edges normal,build --prefix none)
             if test "$consumer" = client; then
               forbidden='^(aap-(engine|auth|secrets|config|policy|observe|providers|transport|daemon|mcp(-upstream)?|store-[^ ]+|test-support)|rusqlite|libsqlite3-sys|security-framework(-sys)?|rustls) '
+            elif test "$consumer" = adapters; then
+              forbidden='^(aap-(daemon|test-support|store-[^ ]+)|rusqlite|libsqlite3-sys|security-framework(-sys)?) '
             else
               forbidden='^(aap-daemon|aap-test-support) '
             fi
             if printf '%s\n' "$dependencies" | grep -E "$forbidden"; then
               exit 1
             fi
+            if test "$consumer" = adapters; then
+              dependencies=$(cargo tree --manifest-path "$manifest" --locked --edges normal,build,dev --prefix none)
+              if printf '%s\n' "$dependencies" | grep -E '^(aap-store-[^ ]+|rusqlite|libsqlite3-sys|security-framework(-sys)?) '; then
+                exit 1
+              fi
+            fi
           done
       - name: Build normal consumers without test features
         run: |
           CARGO_TARGET_DIR="$CARGO_TARGET_DIR/client" cargo build --manifest-path examples/reuse/client/Cargo.toml --locked --bin reuse-client
           CARGO_TARGET_DIR="$CARGO_TARGET_DIR/embedded" cargo build --manifest-path examples/reuse/embedded/Cargo.toml --locked --lib
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/adapters" cargo build --manifest-path examples/reuse/adapters/Cargo.toml --locked --lib
       - name: Run independent conformance tests
         run: |
           CARGO_TARGET_DIR="$CARGO_TARGET_DIR/client" cargo test --manifest-path examples/reuse/client/Cargo.toml --locked
           CARGO_TARGET_DIR="$CARGO_TARGET_DIR/embedded" cargo test --manifest-path examples/reuse/embedded/Cargo.toml --locked
+          CARGO_TARGET_DIR="$CARGO_TARGET_DIR/adapters" cargo test --manifest-path examples/reuse/adapters/Cargo.toml --locked
       - name: Format, lint, and document consumers
         if: matrix.toolchain == '1.95.0'
         run: |
           rustfmt --edition 2024 --check examples/reuse/support/scenarios.rs examples/reuse/support/fixture.rs
-          for consumer in client embedded; do
+          for consumer in client embedded adapters; do
             manifest="examples/reuse/$consumer/Cargo.toml"
             cargo fmt --manifest-path "$manifest" --all -- --check
             CARGO_TARGET_DIR="$CARGO_TARGET_DIR/$consumer" cargo clippy --manifest-path "$manifest" --all-targets --locked -- -D warnings

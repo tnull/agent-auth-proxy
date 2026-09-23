@@ -1400,3 +1400,56 @@ prove counted pre-resolution denial, two-account isolation, custom store/approva
 composition, full shutdown and shared quotas, remote MCP/TCP equivalence, or
 OS confinement of these executables. Those scenarios and the remaining custody,
 observation, confinement, and native Keychain gates are still required.
+
+## Host-supplied custody, approval, and observation
+
+The third independent consumer, [reuse-adapters](../examples/reuse/adapters/README.md),
+now composes a counted test-only `SecretStore`, bounded asynchronous approval
+inbox, and acknowledged observation handoff through public APIs. It installs
+no runtime or listeners. Real verified HTTPS requests demonstrate actual key
+injection and sanitized responses, including newly approved work after rotation
+or trusted recovery from store lock/outage. The fixture store is not exported
+from the library and is not an operational fallback.
+
+Six tests exercise immutable approval input, policy denial before metadata
+access, zero secret resolution while approval is pending, positive/negative
+decisions, full/closed approval queues, cancellation, revocation, dropped
+execution/approver, store lock/outage/interaction requirements, deletion,
+rotation, and late decisions. Invalidation denies stale pending work with no
+resolution or upstream receipt; applicable recovery paths require new approval
+against the changed lease before a successful request.
+
+The observation helper transfers bounded subscription pages to a bounded
+channel, waiting for explicit consumer acknowledgment before advancing its
+cursor. Dropped pages, full/closed queues, expiry, and late acknowledgments
+retain the cursor; a repeated delivery keeps its original delivery ID.
+Acknowledging observation does not approve a pending operation. Consumer
+disconnect is tested separately from failure of the configured local recording
+boundary: only the latter immediately denies required-mode work before secret
+resolution. JSON and decoded content are checked for synthetic private values.
+
+The initial approval/forwarding tests failed against the example stubs. A
+deterministic test then failed when a receipt and its expired deadline were both
+ready: the timeout wrapper accepted the receipt first. The new helper now gives
+expiry priority, and the test passes while proving the cursor remains unchanged.
+This corrects the new example, not an existing production broker component.
+
+All six tests, minimal normal builds, and all-target checks pass on Rust 1.95.0
+and 1.88.0. Stable formatting, warning-free Clippy, and warning-free public docs
+pass. The independent workspace root and resolved normal/build/test dependency
+graphs were inspected: neither SQLCipher nor Apple store bindings are selected;
+normal code also excludes the daemon and test-support package. Registry package
+versions are already present in the root lockfile. CI now includes this third
+consumer, but remote CI has not been run.
+
+Root all-target checks, 276 unit tests, nineteen ordinary process tests, and the
+compile-fail doctest also pass on both compilers. Root formatting, Clippy, and
+warning-free documentation pass on 1.95.0. The unchanged first two consumers
+retain their preceding evidence; the six opt-in confinement tests were not
+rerun here. No production crate API or runtime dependency changed.
+
+W8 remains open: these in-process fixtures do not establish signed human
+approval, native unlock behavior, cookie-backed approval parity, the complete
+shared failure matrix, remote MCP/TCP reuse, or broker-wide shutdown. Backend
+conformance, operational recovery, remaining observation/confinement cases,
+and native Keychain delivery remain part of the full proof of concept.

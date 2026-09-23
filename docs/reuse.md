@@ -12,6 +12,12 @@ passes only their attachments and a synthetic origin to that executable.
 verified HTTPS transport, resolver, and recorder in the host's runtime. It has
 no daemon dependency and does not install listeners, a runtime, or global trust.
 
+`reuse-adapters` now demonstrates host-supplied custody and asynchronous
+approval through public traits, plus bounded observation handoff through an
+authorized subscription. Its synthetic store is integration-test-only; normal
+and test dependency graphs exclude SQLCipher and Apple bindings. See its
+[handoff contract and commands](../examples/reuse/adapters/README.md).
+
 ## Current shared scenarios
 
 Both consumers run the same driver with form and JSON login profiles. Each run
@@ -56,11 +62,16 @@ lint, and documentation gates. Actual local results are recorded in the
 [delivery tracker](proof-of-concept.md). CI configuration is not a remote CI
 result, and passing on Linux does not validate Keychain or macOS compatibility.
 
-These tests do not count secret resolution directly, enforce an OS sandbox, or
-establish cross-account isolation using two different accounts. The existing
+The provider/website tests do not count secret resolution directly, enforce an
+OS sandbox, or establish cross-account isolation using two different accounts. The existing
 [confinement fixtures](confinement.md) and remaining
 [reuse matrix](../plan/reuse.md#shared-behavioral-suite) are separate gates.
-Host-supplied store/approval adapters, shared failure/rotation scenarios, remote
-MCP/TCP, cross-adapter limits, and full shutdown conformance remain required.
+The custom-adapter tests do count secret resolution and exercise denial,
+pending approval, store lock/outage/rotation/deletion, cancellation, and actual
+recording failure. Observer receipts cannot approve operations, and late
+receipts cannot advance a timed-out cursor. These are in-process adapter
+checks, not shared daemon/embedded failure-matrix evidence.
+Shared failure/rotation scenarios, cookie-backed approval, remote MCP/TCP,
+cross-adapter limits, and full shutdown conformance remain required.
 The engine currently exposes per-session revocation, not a complete broker-wide
 shutdown operation; this example does not claim to close that lifecycle gap.
