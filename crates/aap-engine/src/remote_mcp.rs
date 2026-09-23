@@ -506,10 +506,7 @@ impl Session {
                 },
             )?;
             guard.operation.transition(OperationState::Ready, None)?;
-            guard
-                .operation
-                .transition(OperationState::Dispatching, None)?;
-            guard.dispatched = true;
+            guard.begin_dispatch()?;
             let response = config
                 .transport
                 .execute(

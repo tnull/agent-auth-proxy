@@ -251,10 +251,7 @@ impl Session {
                 },
             )?;
             child.operation.transition(OperationState::Ready, None)?;
-            child
-                .operation
-                .transition(OperationState::Dispatching, None)?;
-            child.dispatched = true;
+            child.begin_dispatch()?;
             let response = config
                 .transport
                 .execute(

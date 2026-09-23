@@ -1555,3 +1555,58 @@ All-target checks pass on both; formatting, warning-free Clippy, and public docs
 pass on 1.95.0. Independent consumers and opt-in confinement tests were not
 rerun. Broker-wide native-job accounting, bounded daemon/store shutdown, and
 operational recovery remain open; a cancelled caller alone is not a drain result.
+
+## Ordered final dispatch and authority retirement
+
+The engine now orders final HTTP/MCP dispatch and TCP dialing with broker closure
+and individual session revocation. All provider, website password/cookie, remote
+MCP application, and remote MCP control paths use the same authority boundary.
+The operation-state transition to `Dispatching` commits while that boundary is
+held; transport calls, observation, native access, and cancellation notifications
+occur outside it. A separate session revocation flag permits publication before
+waking callers or walking retained operations. Registry poisoning remains a
+fail-closed error, with notification and cleanup still attempted.
+
+Seven deterministic regressions pause actual operations at `Ready`, after their
+earlier preparation checks, and hold the session operation registry so the
+revocation walk cannot cancel them yet. Closure/revocation is confirmed before
+the operation resumes. Before the gate, each path handed one extra prepared
+request/endpoint to its counted real transport or connector. Testing only the
+returned error or eventual origin receipts would miss that unauthorized handoff.
+The gate rejects it and preserves a pre-dispatch `Cancelled` terminal state.
+
+Positive controls use actual SQLCipher custody, HTTPS origins, and a TCP peer.
+Form and JSON password submissions, cookie-only requests with no new resolution,
+JSON/SSE MCP calls, and an independently authorized DELETE control child are
+covered. Already completed operations remain completed; revoking one session
+leaves another usable. An eighth new test confirms origin receipt before closure
+and retains `OutcomeUnknown` without retry. Existing retained-TCP closure tests
+also continue to verify uncertainty, peer EOF, and released capacity.
+
+The seven regressions failed on pre-gate production code, passed with the gate,
+and failed again after restoring only those production files, before restoring
+the implementation. Test-only barriers do not exist in production builds.
+Tokio's multi-thread runtime feature is added only to engine test dependencies;
+no production dependency, public signature, or agent wire schema changed.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0: 298 unit
+tests, nineteen ordinary daemon process tests, and the compile-fail doctest.
+The three independent consumers also pass on both compilers: one client test,
+two embedded tests, and six custom-adapter tests, using matching daemon builds.
+Formatting, warning-free Clippy, and warning-free public documentation pass on
+1.95.0. These consumers establish their existing integration scenarios, not a
+new daemon/embedded final-race matrix.
+
+All six opt-in Linux confinement fixtures also pass serially on both compilers,
+using each compiler's matching credential-free probe and daemon. These rerun
+the existing provider, MCP website, CONNECT, remote MCP, and TCP sandbox paths;
+they do not close the broader bypass or physical-observation gaps documented in
+[the confinement evidence](confinement.md).
+
+This establishes the engine's L4 dispatch ordering, not aggregate shutdown or
+all lifecycle cases. A dispatch committed before closure may reach its origin
+later; cancellation does not imply rollback. Late private-state writeback,
+unpolled response ownership, aggregate task/native-work drain and deadlines,
+reload retirement, and complete daemon/embedded lifecycle parity remain open.
+Operational recovery, native Keychain delivery, and the other unchecked proof
+gates remain required; this change does not complete W4/W8 or the overall goal.

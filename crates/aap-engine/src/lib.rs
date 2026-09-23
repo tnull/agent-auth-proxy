@@ -83,11 +83,15 @@ pub struct Broker {
 pub struct Session {
     core: Arc<SessionCore>,
 }
+#[cfg(test)]
+type DispatchHook = Box<dyn FnOnce(&str) + Send>;
 struct Host {
     configuration: Configuration,
     epoch: String,
     sessions: Mutex<HashMap<String, Weak<SessionCore>>>,
     closed: AtomicBool,
+    #[cfg(test)]
+    dispatch_hook: Mutex<Option<DispatchHook>>,
     operation_bytes: AtomicUsize,
     contexts: Arc<Semaphore>,
     login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
@@ -102,6 +106,7 @@ struct SessionCore {
     id: String,
     options: SessionOptions,
     expires: Instant,
+    revoked: AtomicBool,
     cancelled: Cancellation,
     operations: Mutex<Operations>,
     active: Arc<Semaphore>,
@@ -212,6 +217,8 @@ impl Broker {
                 epoch: aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?,
                 sessions: Mutex::new(HashMap::new()),
                 closed: AtomicBool::new(false),
+                #[cfg(test)]
+                dispatch_hook: Mutex::new(None),
                 operation_bytes: AtomicUsize::new(0),
                 contexts: Arc::new(Semaphore::new(64)),
                 login_attempts: Mutex::new(HashMap::new()),
@@ -292,6 +299,7 @@ impl Broker {
             id: id.clone(),
             expires: Instant::now() + options.lifetime,
             options,
+            revoked: AtomicBool::new(false),
             cancelled: Cancellation::default(),
             operations: Mutex::new(Operations::default()),
             active: Arc::new(Semaphore::new(8)),
@@ -313,6 +321,9 @@ impl Broker {
     /// fail with `SessionInvalid`. All retained session clones lose authority.
     /// Repeated calls are safe and retry local cleanup. A cleanup error leaves
     /// admission closed and does not skip cancellation of other sessions.
+    /// Final HTTP/MCP dispatch and TCP dialing are ordered with this closure:
+    /// closure winning prevents handoff; a dispatch committed first may still
+    /// have remote effects afterward and retains cancellation uncertainty.
     ///
     /// This is authority closure, not an asynchronous drain. The host must stop
     /// its listeners, cancel/drop owned executions and response bodies, and join
@@ -353,10 +364,23 @@ impl Broker {
     pub fn is_closed(&self) -> bool {
         self.host.closed.load(Ordering::Acquire)
     }
+    /// Retire one session at the same ordering boundary as final dispatch.
+    /// Other sessions remain authorized; cleanup and cancellation notification
+    /// happen after authority has been retired, outside the admission lock.
     pub fn revoke(&self, session: &Session) -> Result<()> {
         if !Arc::ptr_eq(&self.host, &session.core.host) {
             return Err(ErrorCode::PolicyDenied.into());
         }
+        let poisoned = {
+            let registry = self.host.sessions.lock();
+            let poisoned = registry.is_err();
+            let _admission = registry.unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Publish revocation at the same boundary as final dispatch. The
+            // token is notified only after releasing this lock: a waker may
+            // execute caller code, and cleanup may need operation state locks.
+            session.core.revoked.store(true, Ordering::Release);
+            poisoned
+        };
         session.core.cancelled.cancel();
         for operation in session
             .core
@@ -399,15 +423,27 @@ impl Broker {
         {
             stream.finish(stream::Cause::SessionEnded);
         }
-        Ok(())
+        if poisoned {
+            Err(ErrorCode::InternalError.into())
+        } else {
+            Ok(())
+        }
     }
 }
 impl Session {
+    #[cfg(test)]
+    fn before_dispatch(&self, id: &str) {
+        let hook = self.core.host.dispatch_hook.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook(id);
+        }
+    }
     pub fn id(&self) -> &str {
         &self.core.id
     }
     fn check(&self) -> Result<()> {
         if self.core.host.closed.load(Ordering::Acquire)
+            || self.core.revoked.load(Ordering::Acquire)
             || self.core.cancelled.is_cancelled()
             || self.core.expires <= Instant::now()
         {
@@ -415,6 +451,21 @@ impl Session {
         } else {
             Ok(())
         }
+    }
+    /// Callers already hold their operation state lock. Only the short state
+    /// mutation belongs inside this boundary: no I/O, observation, cancellation
+    /// notification, native work, or external callback may run here. Closure
+    /// and revocation release admission before walking operation state, so the
+    /// lock order is operation state -> admission, never the reverse.
+    fn commit_dispatch(&self, commit: impl FnOnce() -> Result<()>) -> Result<()> {
+        let _admission = self
+            .core
+            .host
+            .sessions
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?;
+        self.check()?;
+        commit()
     }
     /// A ready native result can race closure within the same future poll.
     /// Recheck before starting custody work and before using its returned value;

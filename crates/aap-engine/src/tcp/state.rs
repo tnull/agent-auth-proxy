@@ -62,6 +62,19 @@ impl Operation {
         Ok(())
     }
 
+    pub(super) fn commit_dispatch(&self, session: &Session) -> Result<()> {
+        #[cfg(test)]
+        session.before_dispatch(&self.request.request_id);
+        let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
+        session.commit_dispatch(|| {
+            if state.status.state != OperationState::Ready || self.cancelled.is_cancelled() {
+                return Err(ErrorCode::RequestConflict.into());
+            }
+            state.status.state = OperationState::Dispatching;
+            Ok(())
+        })
+    }
+
     pub(super) fn begin_flow(&self) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
         if terminal(state.status.state) || self.cancelled.is_cancelled() {

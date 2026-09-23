@@ -6,6 +6,62 @@ mod framed;
 mod relay;
 mod service;
 
+struct CountedConnector {
+    calls: Arc<AtomicUsize>,
+    inner: Arc<dyn aap_transport::tcp::TcpConnector>,
+}
+impl aap_transport::tcp::TcpConnector for CountedConnector {
+    fn connect(
+        &self,
+        endpoint: aap_transport::tcp::TcpEndpoint,
+        deadline: Instant,
+        cancellation: Cancellation,
+    ) -> BoxFuture<'_, Result<aap_transport::tcp::TcpSocket>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.connect(endpoint, deadline, cancellation)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_dispatch_gate_blocks_closed_tcp_handoff() {
+    use super::dispatch::{EndAuthority, close_at_ready};
+    let fixture = Fixture::new().await;
+    let tcp = TcpFixture::new().await;
+    let mut configuration = tcp.configuration(&fixture);
+    let calls = Arc::new(AtomicUsize::new(0));
+    configuration.tcp_connector = Arc::new(CountedConnector {
+        calls: calls.clone(),
+        inner: configuration.tcp_connector.clone(),
+    });
+    let broker = Arc::new(Broker::new(configuration).unwrap());
+    let session = broker.create_session(tcp_options()).unwrap();
+    let connected = admitted(&session, open()).connect().await.unwrap();
+    let (peer, _) = tcp.listener.accept().await.unwrap();
+    connected.opened().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(connected);
+    drop(peer);
+    let pending = admitted(&session, open());
+    let (result, status) = close_at_ready(broker, &session, EndAuthority::Broker, async move {
+        pending.connect().await
+    })
+    .await;
+    assert!(matches!(result, Err(terminal) if terminal.cause == Cause::SessionEnded));
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "closed authority handed a TCP endpoint to the connector"
+    );
+    assert_eq!(status.state, OperationState::Cancelled);
+    assert_eq!(session.core.active.available_permits(), 8);
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 0);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), tcp.listener.accept())
+            .await
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn broker_close_terminates_retained_tcp_handles_and_releases_capacity() {
     use tokio::io::AsyncReadExt;

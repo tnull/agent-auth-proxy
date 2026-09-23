@@ -202,9 +202,7 @@ impl PendingTcp {
             })
             .map_err(cause)?;
         self.check_preparation(deadline)?;
-        operation
-            .transition(OperationState::Dispatching)
-            .map_err(cause)?;
+        operation.commit_dispatch(&self.session).map_err(cause)?;
         let socket = config
             .tcp_connector
             .connect(endpoint, deadline, operation.cancelled.clone())

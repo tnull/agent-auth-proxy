@@ -1,5 +1,41 @@
 use super::*;
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_dispatch_gate_blocks_closed_remote_control_handoff() {
+    use crate::tests::dispatch::{CountedTransport, EndAuthority, close_at_ready};
+    let fixture = fixture(204, "", true).await;
+    let mut configuration = config(&fixture);
+    let calls = CountedTransport::install(&mut configuration);
+    let broker = Arc::new(Broker::new(configuration).unwrap());
+    let session = broker.create_session(options()).unwrap();
+    handshake(&fixture, &session).await;
+    closed(
+        session.execute(delete(&fixture)).await.unwrap(),
+        "confirmed",
+    )
+    .await;
+    handshake(&fixture, &session).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 5);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 5);
+    let input = delete(&fixture);
+    let parent = input.request_id.clone();
+    let running = session.clone();
+    let (result, status) = close_at_ready(broker, &session, EndAuthority::Broker, async move {
+        running.execute(input).await
+    })
+    .await;
+    assert!(result.is_err());
+    assert_ne!(status.request_id, parent, "must exercise the control child");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        5,
+        "closed authority handed an MCP cleanup request to the transport"
+    );
+    assert_eq!(status.state, OperationState::Cancelled);
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 5);
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 6);
+}
+
 #[tokio::test]
 async fn broker_close_during_resolution_discards_the_returned_cleanup_key() {
     use crate::tests::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};

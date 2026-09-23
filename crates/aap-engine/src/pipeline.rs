@@ -394,10 +394,7 @@ impl Session {
             },
         )?;
         guard.operation.transition(OperationState::Ready, None)?;
-        guard
-            .operation
-            .transition(OperationState::Dispatching, None)?;
-        guard.dispatched = true;
+        guard.begin_dispatch()?;
         let limits = Limits {
             max_request_bytes: route.max_request_bytes,
             max_response_bytes: route.max_response_bytes,
@@ -450,6 +447,35 @@ pub(super) struct Guard {
     pub response_recorded: bool,
 }
 impl Guard {
+    pub fn begin_dispatch(&mut self) -> Result<()> {
+        #[cfg(test)]
+        self.session
+            .before_dispatch(&self.operation.request.request_id);
+        let committed = {
+            let mut state = self
+                .operation
+                .state
+                .lock()
+                .map_err(|_| ErrorCode::InternalError)?;
+            self.session.commit_dispatch(|| {
+                if state.state != OperationState::Ready || self.operation.cancelled.is_cancelled() {
+                    return Err(ErrorCode::RequestConflict.into());
+                }
+                state.state = OperationState::Dispatching;
+                Ok(())
+            })
+        };
+        if let Err(error) = committed {
+            if error.code == ErrorCode::SessionInvalid {
+                // Closure may still be walking other operations. Preserve this
+                // pre-dispatch cancellation without waiting for that cleanup.
+                self.operation.cancel();
+            }
+            return Err(error);
+        }
+        self.dispatched = true;
+        Ok(())
+    }
     /// Internal protocol work receives the same tracking budgets and an
     /// independent observation flow; no child inherits dispatch authority.
     pub fn child(session: &Session, parent: &Operation, request: ExecuteRequest) -> Result<Self> {

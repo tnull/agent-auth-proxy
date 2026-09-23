@@ -4,6 +4,71 @@ use aap_types::profile::LoginEncoding;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_dispatch_gate_blocks_closed_password_handoff() {
+    website_dispatch_boundary(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_dispatch_gate_blocks_closed_cookie_handoff_without_resolution() {
+    website_dispatch_boundary(true).await;
+}
+
+async fn website_dispatch_boundary(cookie: bool) {
+    use super::dispatch::{CountedTransport, EndAuthority, close_at_ready};
+    for encoding in [LoginEncoding::Form, LoginEncoding::Json] {
+        let mut fixture = Fixture::new().await;
+        fixture.origin = website_origin(encoding, true).await;
+        let mut configuration = website_configuration(&fixture, encoding).await;
+        let calls = CountedTransport::install(&mut configuration);
+        let broker = Arc::new(Broker::new(configuration).unwrap());
+        let session = broker.create_session(options()).unwrap();
+        let login = session.get_login(issuance(&fixture)).await.unwrap();
+        let csrf = page(&fixture, &session, &login).await;
+        let body = login_body(&login, &csrf, encoding);
+        for input in [
+            request(&fixture, &login, "POST", "/session", &body),
+            request(&fixture, &login, "GET", "/protected", b""),
+        ] {
+            session
+                .execute(input)
+                .await
+                .unwrap()
+                .into_body()
+                .collect()
+                .await
+                .unwrap();
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 1);
+        let input = if cookie {
+            request(&fixture, &login, "GET", "/protected", b"")
+        } else {
+            request(&fixture, &login, "POST", "/session", &body)
+        };
+        let running = session.clone();
+        let (result, status) = close_at_ready(broker, &session, EndAuthority::Broker, async move {
+            running.execute(input).await
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "closed authority handed website authentication to the transport"
+        );
+        assert_eq!(status.state, OperationState::Cancelled);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        assert_eq!(
+            fixture.resolutions.load(Ordering::SeqCst),
+            if cookie { 1 } else { 2 }
+        );
+        let context = session.core.vault.lock().unwrap().contexts[&login.auth_context].clone();
+        assert_eq!(context.state.lock().unwrap().status, AuthState::Revoked);
+    }
+}
+
 #[tokio::test]
 async fn broker_close_during_resolution_rejects_late_website_credentials() {
     use super::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};

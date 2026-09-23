@@ -55,7 +55,22 @@ and remote MCP control/cleanup keys. A native future becoming ready in the same
 poll as closure must not continue into secret preparation just because the
 outer cancellation wait was checked earlier. These checks discard that late
 result; they neither interrupt native work nor establish atomic ordering of
-every dispatch/state-commit race.
+private response-state commits.
+
+Final dispatch now has a shared ordering boundary with both `Broker::close()`
+and `Broker::revoke()`. Provider HTTP, website password/cookie traffic, remote
+MCP application and control requests, and TCP dialing commit their `Ready` to
+`Dispatching` transition under that boundary. If authority retirement wins,
+the transport is not called and the operation remains cancelled before dispatch,
+even if the revocation cleanup walk has not reached it yet. If dispatch wins,
+cancellation conservatively retains uncertainty; already completed results are
+unchanged, and no automatic replay occurs. Transport/OS work committed first
+can still reach its destination after closure returns.
+
+The admission lock covers only the authority check and operation-state mutation.
+Transport calls, observations, native work, and cancellation notifications run
+outside it. This is not an aggregate drain result or a proof of all late private
+state writeback races; those lifecycle gates remain open.
 
 ## TCP admission and connection ownership
 

@@ -8,6 +8,37 @@ mod cancellation;
 mod cleanup;
 mod controls;
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn final_dispatch_gate_blocks_closed_remote_mcp_handoff() {
+    use super::dispatch::{CountedTransport, EndAuthority, close_at_ready};
+    for sse in [false, true] {
+        let fixture = fixture(sse, false).await;
+        let mut config = configuration(&fixture);
+        let calls = CountedTransport::install(&mut config);
+        let broker = Arc::new(Broker::new(config).unwrap());
+        let session = broker.create_session(options()).unwrap();
+        handshake(&fixture, &session).await;
+        response_json(session.execute(request(&fixture, call())).await.unwrap()).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        let input = request(&fixture, call());
+        let running = session.clone();
+        let (result, status) = close_at_ready(broker, &session, EndAuthority::Broker, async move {
+            running.execute(input).await
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "closed authority handed an MCP request to the transport"
+        );
+        assert_eq!(status.state, OperationState::Cancelled);
+        assert_eq!(fixture.origin.requests.lock().unwrap().len(), 3);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 4);
+    }
+}
+
 #[tokio::test]
 async fn broker_close_during_resolution_discards_the_returned_remote_mcp_key() {
     use super::lifecycle::{CloseAt, ClosingStore, no_authentication_prepared};
