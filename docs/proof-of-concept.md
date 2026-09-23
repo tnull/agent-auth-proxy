@@ -1790,3 +1790,25 @@ task/socket/native-job joins, retention across generations, the one aggregate
 deadline, scoped-observer admission during retirement, and the full real-socket
 disconnect/held-resource matrix remain open. Native Keychain delivery and offline
 store recovery are also unfinished; no overall milestone is marked complete.
+
+## Scoped observer retirement before cleanup
+
+Reload and shutdown now close each scoped subscription's admission before
+releasing the publication boundary. `Subscription::close_admission()` rejects
+new reads and acknowledgments without waiting for the recorder lock or releasing
+retention claims; ordinary `close()` performs subsequent cleanup. An already
+admitted read/ack may finish, and delivered data is not retracted.
+
+A real Unix-socket regression pauses reload after commitment but before cleanup.
+Positive reads observe queued metadata and acknowledgments work before retirement;
+both endpoints return `observation_unavailable` afterward. Before the fix, both
+returned HTTP 200. The regression passed with the fix, failed again when the
+production integration was removed, and passed after restoration. A recording
+conformance test holds the recorder lock while admission closes, checks retained
+handles are denied, preserves claims until cleanup, and verifies an independent
+subscriber still reads and acknowledges its own claim.
+
+Both Rust 1.95.0 and 1.88.0 pass all-target checks, 322 unit tests, nineteen
+ordinary process tests, and the compile-fail doctest. Stable formatting,
+warning-free Clippy, and docs pass. Independent consumers and opt-in confinement
+were not rerun for this correction. Bounded resource drain remains unverified.

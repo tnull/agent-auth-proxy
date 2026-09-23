@@ -2,6 +2,8 @@ use super::*;
 use aap_types::{AgentService, SearchItems};
 use std::os::unix::fs::DirBuilderExt;
 
+mod observation;
+
 struct Fixture {
     root: PathBuf,
     control: Arc<Control>,

@@ -44,6 +44,13 @@ bounded queues, delivery sequences, cursor validation, and acknowledgments.
 Enrollment includes no historical records or future session wildcard. A handle
 can read/ack only its own queue; closing/dropping it revokes that authority.
 
+`Subscription::close_admission()` irreversibly rejects new reads and
+acknowledgments without waiting for the recorder lock or releasing retention
+claims. Hosts use it during generation retirement, then call `close()` outside
+their publication boundary for cleanup. Requests already admitted under the
+recorder lock may finish; closure does not retract data already returned.
+Repeated closure is harmless and cannot reopen a retained handle.
+
 Canonical records are retained once across all claims, within configured
 global event/byte limits and an 8 MiB per-session content ceiling. Each consumer
 has an independent retention claim, as does the owner channel. Required records

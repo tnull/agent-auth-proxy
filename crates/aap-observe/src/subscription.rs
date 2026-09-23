@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +41,7 @@ pub struct SubscriptionBatch {
 pub struct Subscription {
     pub(super) recorder: Recorder,
     pub(super) id: String,
+    closed: AtomicBool,
 }
 impl Recorder {
     /// Trusted enrollment of a forward-only, immutable content grant.
@@ -74,6 +76,7 @@ impl Recorder {
         Ok(Subscription {
             recorder: self.clone(),
             id,
+            closed: AtomicBool::new(false),
         })
     }
 }
@@ -87,12 +90,14 @@ impl Subscription {
         limit: usize,
         max_bytes: usize,
     ) -> Result<SubscriptionBatch> {
+        self.check_admission()?;
         super::recorder::page_bounds(limit, max_bytes)?;
         let mut state = self
             .recorder
             .state
             .lock()
             .map_err(|_| ErrorCode::ObservationUnavailable)?;
+        self.check_admission()?;
         let index = state.subscriber(&self.id)?;
         let subscriber = state.subscribers[index]
             .as_ref()
@@ -157,11 +162,13 @@ impl Subscription {
         })
     }
     pub fn acknowledge(&self, cursor: &SubscriptionCursor) -> Result<()> {
+        self.check_admission()?;
         let mut state = self
             .recorder
             .state
             .lock()
             .map_err(|_| ErrorCode::ObservationUnavailable)?;
+        self.check_admission()?;
         let index = state.subscriber(&self.id)?;
         let subscriber = state.subscribers[index]
             .as_ref()
@@ -181,7 +188,23 @@ impl Subscription {
         state.release(&sources, Some(index));
         Ok(())
     }
+    /// Irreversibly reject new reads/acknowledgments without waiting for the
+    /// recorder, invoking callbacks, or releasing retained recording claims.
+    /// Reads/acks already admitted under the recorder lock may finish; closure
+    /// does not retract returned data. The host must subsequently call `close`
+    /// outside its publication boundary to release this subscription's claims.
+    pub fn close_admission(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+    fn check_admission(&self) -> Result<()> {
+        if self.closed.load(Ordering::Acquire) {
+            Err(ErrorCode::ObservationUnavailable.into())
+        } else {
+            Ok(())
+        }
+    }
     pub fn close(&self) {
+        self.close_admission();
         if let Ok(mut state) = self.recorder.state.lock()
             && let Ok(index) = state.subscriber(&self.id)
         {
@@ -290,6 +313,51 @@ mod tests {
             max_events: events,
             max_bytes: 8192,
         }
+    }
+    #[test]
+    fn admission_closure_does_not_wait_for_recording_cleanup() {
+        let recorder = Recorder::new(id(), 32, 32768).unwrap();
+        let session = id();
+        let retired = Arc::new(recorder.subscribe(scope(&session), limits(16)).unwrap());
+        let live = recorder.subscribe(scope(&session), limits(16)).unwrap();
+        recorder.record(event(&session, false), false).unwrap();
+        let batch = retired.read(None, 16, 8192).unwrap();
+        assert_eq!(batch.deliveries.len(), 1);
+        let retained = retired.clone();
+        let locked = recorder.state.lock().unwrap();
+        std::thread::scope(|threads| {
+            let (sent, ready) = std::sync::mpsc::channel();
+            let retained = retained.clone();
+            let worker = threads.spawn(move || {
+                retained.close_admission();
+                retained.close_admission();
+                let read = retained.read(None, 16, 8192);
+                let ack = retained.acknowledge(&batch.cursor);
+                sent.send((read, ack)).unwrap();
+            });
+            let result = ready.recv_timeout(std::time::Duration::from_secs(1));
+            // Release even if the contract regresses, so the worker can finish.
+            drop(locked);
+            worker.join().unwrap();
+            let (read, ack) = result.expect("authority closure waited for the recorder lock");
+            assert!(matches!(read, Err(error) if error.code == ErrorCode::ObservationUnavailable));
+            assert!(matches!(ack, Err(error) if error.code == ErrorCode::ObservationUnavailable));
+        });
+        let owner = recorder.read(None, 16).unwrap();
+        recorder.acknowledge(&owner.cursor).unwrap();
+        let unaffected = live.read(None, 16, 8192).unwrap();
+        assert_eq!(unaffected.deliveries.len(), 1);
+        live.acknowledge(&unaffected.cursor).unwrap();
+        assert_eq!(
+            recorder.state.lock().unwrap().records.len(),
+            1,
+            "admission closure silently released recording claims"
+        );
+        retired.close();
+        assert!(recorder.state.lock().unwrap().records.is_empty());
+        assert!(
+            matches!(retained.read(None, 16, 8192), Err(error) if error.code == ErrorCode::ObservationUnavailable)
+        );
     }
     #[test]
     fn owner_cursors_cannot_be_confused_with_scoped_delivery_cursors() {

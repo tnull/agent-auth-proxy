@@ -9,6 +9,9 @@ pub(super) struct Attachment {
     _binding: SocketBinding,
 }
 impl Attachment {
+    pub(super) fn close_admission(&self) {
+        self.subscription.close_admission();
+    }
     pub(super) fn valid(&self, sessions: &HashMap<String, super::Attachment>) -> bool {
         self.expires > Instant::now()
             && !self.task.is_finished()

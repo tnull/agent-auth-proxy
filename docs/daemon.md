@@ -146,7 +146,8 @@ Rejection before commitment does not change authority; unrelated shutdown or
 revocation can still close it. Commitment requires a strictly newer revision
 and closes the entire old broker, including handles outside the attachment map
 and sessions with unchanged grants. The trusted launcher creates fresh
-attachments. Scoped collector attachments are also removed during cleanup.
+attachments. Scoped collector admission closes before publication as well;
+their listener and retained-buffer cleanup follows outside that boundary.
 Changes to store location/alias, runtime directory, or observation configuration
 require restart; there is no partial backend/collector migration during reload.
 

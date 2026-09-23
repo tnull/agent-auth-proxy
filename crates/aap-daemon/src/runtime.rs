@@ -183,6 +183,9 @@ impl Control {
         let (broker, observers, sessions) = {
             let mut state = self.state.lock().map_err(|_| ErrorCode::InternalError)?;
             state.broker.close_admission();
+            for observer in state.observers.values() {
+                observer.close_admission();
+            }
             (
                 state.broker.clone(),
                 std::mem::take(&mut state.observers),
@@ -240,6 +243,9 @@ impl Control {
         // All fallible preparation precedes this commitment. No notification,
         // cleanup callback, or suspension can interleave closure and publication.
         state.broker.close_admission();
+        for observer in state.observers.values() {
+            observer.close_admission();
+        }
         let retired = std::mem::replace(&mut state.broker, candidate);
         let observers = std::mem::take(&mut state.observers);
         let sessions = std::mem::take(&mut state.sessions);
