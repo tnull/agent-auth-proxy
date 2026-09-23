@@ -922,3 +922,40 @@ checking found and corrected an IPv6 example mistakenly parsed as a Rustdoc link
 The engine-owned duplex operation, shared approval/quotas/observation, local
 upgrade, agent client, and confinement acceptance remain unimplemented TCP
 integration gates. These connector tests do not complete W7.
+
+## TCP engine admission and connection lifecycle
+
+The trusted engine now owns one pending TCP attachment per operation, separate
+from HTTP execution but inside the same operation-ID namespace and retained
+tracking budget. Admission checks grants without DNS, store access, or dialing.
+Duplicates return status without acquiring another attachment. Connection
+preparation binds separate connection-level consent, full address admission,
+required opening observation, and one admitted connector attempt. No dummy
+credential lease or store metadata/read call is used for TCP.
+
+Pending attachments have per-session/broker ceilings of 16/128. Preparation
+shares HTTP's 16 pending approvals/4 MiB and eight active session slots. Active
+TCP additionally reserves a per-resource slot, one of 64 broker slots, and
+128 KiB from an 8 MiB payload pool. Cancellation closes retained sockets and
+releases reservations without waiting for their owner to poll or drop them.
+Unpolled connected handles expire under the original idle/session/lifetime
+bounds; reported opening lifetime decreases rather than restarting the clock.
+
+Thirteen added tests cover shared identity, immutable connection approval,
+late/denied/absent consent, drop/cancel/revoke, pending/active/global/payload
+capacity, shared HTTP approval retention, observation finality, and timing.
+Initial admission tests failed against compiling stubs. Subsequent draft tests
+exposed retained pending capacity after cancellation, stale reported lifetime,
+post-cancellation observation, and ready approval/DNS/connector results winning
+at expired deadlines. Those assertions were observed failing before their fixes
+and now pass. The 64-connection fixture needed a larger bounded recorder to test
+connection capacity without first exhausting required observation storage;
+its capacity assertions and required-recording mode were preserved.
+
+All 217 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0, with all-target checks on both and warning-free
+stable Clippy. Tokio I/O helpers were enabled only for engine development tests;
+no runtime dependency was added. This foundation does not yet forward TCP
+application bytes or expose an agent endpoint: duplex/half-close, payload
+observation, local upgrade, client/service binding, and actual confinement
+remain open W7 gates, alongside the other recorded proof requirements.

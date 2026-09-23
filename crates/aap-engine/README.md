@@ -26,13 +26,35 @@ are capped at five minutes and operations at ten minutes/session expiry.
 These are admission ceilings, not production capacity claims. Further quota,
 expiry, restart/reload, and multi-thread race coverage remains part of W1/W4.
 
-## TCP enrollment
+## TCP admission and connection ownership
 
 The separate `Configuration.tcp_profiles` collection is validated at broker
 construction and participates in session resource grants. A TCP-only grant
-cannot execute HTTP or discover another resource's credential items. The actual
-stream operation, shared relay lifecycle, and connector integration are pending;
-accepting an enrollment is not a claim that the TCP endpoint is available.
+cannot execute HTTP or discover another resource's credential items.
+
+The trusted `Session::admit_tcp` entry point registers one attachment without
+DNS, store access, or connection work. Its ID shares the HTTP/issuance namespace;
+duplicates return existing status without a second attachment. Owning and then
+dropping the pending handle cancels the operation. `PendingTcp::connect` performs
+separate connection-level approval, complete address admission, required opening
+observation, shared capacity admission, and one attempt through the injected
+`Configuration.tcp_connector`. No credential lease or store call is involved.
+Existing approval providers deny connection consent unless they implement it.
+
+Pending attachments are bounded to sixteen per session and 128 per broker.
+TCP shares the eight active session slots and the sixteen/4 MiB approval budget
+with HTTP; it additionally reserves one of 64 broker stream slots and 128 KiB
+of an 8 MiB relay payload pool. Per-resource active limits apply independently.
+Cancellation releases pending/connected reservations and closes owned sockets,
+even if a caller retains an unpolled handle. Retained operation IDs still cannot
+reconnect. Approval, preparation, idle, and lifetime deadlines do not extend when
+a late future becomes ready; connection attempts have conservative uncertainty.
+
+`ConnectedTcp` retains the socket privately and reports opening limits with the
+remaining original lifetime. It does not yet expose application I/O. Duplex
+relay, payload observation, HTTP upgrade, credential-free service/client binding,
+and actual daemon/confinement integration remain pending. These trusted APIs do
+not establish an operational agent TCP endpoint.
 
 ## Remote MCP integration
 

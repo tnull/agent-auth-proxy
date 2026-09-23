@@ -22,6 +22,7 @@ mod observation;
 mod pipeline;
 mod proxy;
 mod remote_mcp;
+pub mod tcp;
 mod vault;
 mod website;
 
@@ -32,6 +33,7 @@ pub struct Configuration {
     pub stores: HashMap<String, Arc<dyn SecretStore>>,
     pub resolver: Arc<dyn Resolver>,
     pub transport: Arc<dyn Transport>,
+    pub tcp_connector: Arc<dyn aap_transport::tcp::TcpConnector>,
     pub inspector: Arc<dyn aap_types::profile::RequestInspector>,
     pub approval: Option<Arc<dyn ApprovalProvider>>,
     pub require_approval: bool,
@@ -64,6 +66,15 @@ pub trait ApprovalProvider: Send + Sync {
         request: Arc<ApprovalRequest>,
         cancellation: Cancellation,
     ) -> BoxFuture<'_, Result<bool>>;
+    /// Connection consent is separate from credential-bearing HTTP consent.
+    /// Existing providers must explicitly support it; there is no dummy lease.
+    fn approve_connection(
+        &self,
+        _request: Arc<tcp::ConnectionApproval>,
+        _cancellation: Cancellation,
+    ) -> BoxFuture<'_, Result<bool>> {
+        Box::pin(async { Err(ErrorCode::InteractionUnavailable.into()) })
+    }
 }
 pub struct Broker {
     host: Arc<Host>,
@@ -81,6 +92,9 @@ struct Host {
     login_attempts: Mutex<HashMap<String, Vec<Instant>>>,
     remote_profiles: HashMap<String, Arc<aap_mcp_upstream::Profile>>,
     remote_buffers: Arc<Semaphore>,
+    tcp_pending: Arc<Semaphore>,
+    tcp_active: Arc<Semaphore>,
+    tcp_payload: Arc<Semaphore>,
 }
 struct SessionCore {
     host: Arc<Host>,
@@ -96,12 +110,20 @@ struct SessionCore {
     remote: Mutex<remote_mcp::Vault>,
     remote_buffers: Arc<Semaphore>,
     control: Arc<Semaphore>,
+    tcp_pending: Arc<Semaphore>,
+    tcp_resources: HashMap<String, Arc<Semaphore>>,
 }
 #[derive(Default)]
 struct Operations {
     items: HashMap<String, Arc<Operation>>,
     issuances: HashMap<String, Arc<vault::Issuance>>,
+    streams: HashMap<String, Arc<tcp::Operation>>,
     bytes: usize,
+}
+impl Operations {
+    fn len(&self) -> usize {
+        self.items.len() + self.issuances.len() + self.streams.len()
+    }
 }
 struct Operation {
     request: Arc<ExecuteRequest>,
@@ -193,6 +215,9 @@ impl Broker {
                 login_attempts: Mutex::new(HashMap::new()),
                 remote_profiles,
                 remote_buffers: Arc::new(Semaphore::new(64 * 1024 * 1024)),
+                tcp_pending: Arc::new(Semaphore::new(128)),
+                tcp_active: Arc::new(Semaphore::new(64)),
+                tcp_payload: Arc::new(Semaphore::new(8 * 1024 * 1024)),
             }),
         })
     }
@@ -239,6 +264,19 @@ impl Broker {
             return Err(ErrorCode::LimitExceeded.into());
         }
         let id = aap_types::ids::random_id(16).map_err(|_| ErrorCode::InternalError)?;
+        let tcp_resources = self
+            .host
+            .configuration
+            .tcp_profiles
+            .iter()
+            .filter(|profile| options.resources.contains(&profile.id))
+            .map(|profile| {
+                (
+                    profile.id.clone(),
+                    Arc::new(Semaphore::new(profile.limits.max_active_streams as usize)),
+                )
+            })
+            .collect();
         let core = Arc::new(SessionCore {
             host: self.host.clone(),
             id: id.clone(),
@@ -253,6 +291,8 @@ impl Broker {
             remote: Mutex::new(remote_mcp::Vault::default()),
             remote_buffers: Arc::new(Semaphore::new(8 * 1024 * 1024)),
             control: Arc::new(Semaphore::new(2)),
+            tcp_pending: Arc::new(Semaphore::new(16)),
+            tcp_resources,
         });
         sessions.insert(id, Arc::downgrade(&core));
         Ok(Session { core })
@@ -293,6 +333,16 @@ impl Broker {
             context.invalidate(AuthState::Revoked);
         }
         session.invalidate_remote(None)?;
+        for stream in session
+            .core
+            .operations
+            .lock()
+            .map_err(|_| ErrorCode::InternalError)?
+            .streams
+            .values()
+        {
+            stream.finish(stream::Cause::SessionEnded);
+        }
         Ok(())
     }
 }
@@ -343,6 +393,9 @@ impl AgentService for Session {
     }
     fn request_status(&self, request_id: String) -> BoxFuture<'_, Result<OperationStatus>> {
         Box::pin(async move {
+            if let Some(stream) = self.tcp_operation(&request_id)? {
+                return stream.status();
+            }
             if let Some(issuance) = self.issuance(&request_id)? {
                 return issuance.status();
             }
@@ -351,6 +404,10 @@ impl AgentService for Session {
     }
     fn cancel(&self, request_id: String) -> BoxFuture<'_, Result<OperationStatus>> {
         Box::pin(async move {
+            if let Some(stream) = self.tcp_operation(&request_id)? {
+                stream.finish(stream::Cause::Cancelled);
+                return stream.status();
+            }
             if let Some(issuance) = self.issuance(&request_id)? {
                 issuance.cancel();
                 return issuance.status();

@@ -2,16 +2,39 @@ use super::{pipeline::Guard, *};
 use aap_observe::{Data, Decision, Direction};
 use aap_secrets::Lease;
 
-struct PendingBytes<'a> {
-    counter: &'a AtomicUsize,
+pub(super) struct ApprovalReservation {
+    _pending: OwnedSemaphorePermit,
+    session: Arc<SessionCore>,
     bytes: usize,
 }
-impl Drop for PendingBytes<'_> {
+impl Drop for ApprovalReservation {
     fn drop(&mut self) {
-        self.counter.fetch_sub(self.bytes, Ordering::AcqRel);
+        self.session
+            .pending_bytes
+            .fetch_sub(self.bytes, Ordering::AcqRel);
     }
 }
 impl Session {
+    pub(super) fn reserve_approval(&self, bytes: usize) -> Result<ApprovalReservation> {
+        let pending = self
+            .core
+            .pending
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorCode::LimitExceeded)?;
+        self.core
+            .pending_bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(bytes)
+                    .filter(|next| *next <= 4 * 1024 * 1024)
+            })
+            .map_err(|_| ErrorCode::LimitExceeded)?;
+        Ok(ApprovalReservation {
+            _pending: pending,
+            session: self.core.clone(),
+            bytes,
+        })
+    }
     pub(super) async fn approve_operation(
         &self,
         guard: &Guard,
@@ -25,12 +48,6 @@ impl Session {
             .approval
             .as_ref()
             .ok_or(ErrorCode::InteractionUnavailable)?;
-        let _pending = self
-            .core
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ErrorCode::LimitExceeded)?;
         let input = &guard.operation.request;
         let bytes = input.body_base64.len()
             + input.target.len()
@@ -40,17 +57,7 @@ impl Session {
                 .iter()
                 .map(|(name, value)| name.len() + value.len())
                 .sum::<usize>();
-        self.core
-            .pending_bytes
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                used.checked_add(bytes)
-                    .filter(|next| *next <= 4 * 1024 * 1024)
-            })
-            .map_err(|_| ErrorCode::LimitExceeded)?;
-        let _retention = PendingBytes {
-            counter: &self.core.pending_bytes,
-            bytes,
-        };
+        let _reservation = self.reserve_approval(bytes)?;
         let expires = deadline.min(Instant::now() + Duration::from_secs(300));
         let request = Arc::new(ApprovalRequest {
             daemon_epoch: self.core.host.epoch.clone(),

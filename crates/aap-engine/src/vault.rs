@@ -227,7 +227,9 @@ impl Session {
                 .operations
                 .lock()
                 .map_err(|_| ErrorCode::InternalError)?;
-            if operations.items.contains_key(&request.request_id) {
+            if operations.items.contains_key(&request.request_id)
+                || operations.streams.contains_key(&request.request_id)
+            {
                 return Err(ErrorCode::RequestConflict.into());
             }
             if let Some(existing) = operations.issuances.get(&request.request_id) {
@@ -237,9 +239,7 @@ impl Session {
                 (existing.clone(), false)
             } else {
                 let bytes = request.uri.len() + request.item_id.len() + 2048;
-                if operations.items.len() + operations.issuances.len() >= 4096
-                    || operations.bytes + bytes > 8 * 1024 * 1024
-                {
+                if operations.len() >= 4096 || operations.bytes + bytes > 8 * 1024 * 1024 {
                     return Err(ErrorCode::LimitExceeded.into());
                 }
                 self.core

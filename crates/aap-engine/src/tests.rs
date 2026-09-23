@@ -206,6 +206,7 @@ impl Fixture {
             )]),
             resolver: Arc::new(FixedResolver(self.origin.address)),
             tcp_profiles: vec![],
+            tcp_connector: Arc::new(aap_transport::tcp::SystemTcpConnector),
             transport: Arc::new(HttpsTransport::new([self.origin.certificate.clone()]).unwrap()),
             inspector: Arc::new(aap_providers::TextOnly),
             approval: None,

@@ -49,6 +49,7 @@ fn broker(loaded: &Loaded, store: Arc<SqliteStore>, recorder: Recorder) -> Resul
             },
         }),
         transport: Arc::new(crate::transport(configuration)?),
+        tcp_connector: Arc::new(aap_transport::tcp::SystemTcpConnector),
         inspector: Arc::new(aap_providers::TextOnly),
         approval: None,
         require_approval: configuration.require_approval,
