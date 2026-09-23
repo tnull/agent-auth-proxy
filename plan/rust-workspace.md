@@ -1,8 +1,9 @@
 # Rust workspace and reusable crate boundaries
 
-Status: implementation design. A starter workspace exists; this document
-specifies the target package graph, not a list of completed crates. Actual
-progress is recorded in [the delivery tracker](../docs/proof-of-concept.md).
+Status: implementation design with a 16-crate workspace and runnable Linux demo.
+The existing crate boundaries below are implemented; the Keychain crate and
+broader lifecycle/release requirements remain planned. Actual scoped evidence
+is recorded in [the delivery tracker](../docs/proof-of-concept.md#current-status).
 Authentication behavior remains defined by
 [the authentication specification](authentication.md).
 
@@ -46,7 +47,7 @@ agent-auth-proxy/
     aap-config/               # Trusted private-file access and safe updates
     aap-secrets/              # Secret-store interface and guarded values
     aap-store-sqlite/          # Non-macOS default encrypted SQLite backend
-    aap-store-keychain/        # macOS default native credential backend
+    aap-store-keychain/        # PLANNED, not present: native macOS backend
     aap-auth/                 # Password manager, substitution, cookie sessions
     aap-observe/              # Redacted events and bounded delivery
     aap-transport/            # Network/TLS primitives and upstream execution
@@ -59,13 +60,15 @@ agent-auth-proxy/
     aap-daemon/               # Binary composition and host control plane
     aap-test-support/         # Development-only fixtures
   .github/workflows/          # CI for implemented crates and supported features
+  scripts/demo.sh             # Synthetic Linux demo launcher
+  examples/reuse/             # Independent client / embedded / adapter workspaces
 ```
 
-Each crate has its own `Cargo.toml`, README, `src/`, and relevant integration
-tests. The daemon uses Keychain directly on macOS and encrypted SQLite on other
-platforms. The native backend is a separate package introduced with its
-integration milestone and uses direct Rust `security-framework` bindings. Existing
-authorized Keychain items can be enrolled without copying their passwords.
+Each existing crate has its own `Cargo.toml`, README, `src/`, and relevant tests.
+The current daemon runs on Linux and selects SQLCipher. The planned macOS
+backend will be a separate package using direct Rust `security-framework`
+bindings, not SQLite or UniFFI. Enrollment of authorized existing Keychain items
+without copying passwords remains a requirement, not an implemented capability.
 Other store adapters can implement the same interface without changing the
 engine. See [secret stores](secret-stores.md).
 
@@ -76,28 +79,29 @@ Keep cookie handling, form parsers, and placeholder management as modules within
 
 ## Package responsibilities
 
-The proposed exported names below identify API responsibilities, not finalized
-Rust signatures. Review concrete signatures during each implementation step.
+The table identifies responsibility boundaries rather than an exhaustive API
+reference. Consult crate READMEs/source for concrete signatures; the explicitly
+planned Keychain row is not an available dependency.
 
-| Crate | Owns / proposed API | Explicit boundary |
+| Crate | Owns / API responsibility | Explicit boundary |
 | --- | --- | --- |
 | `aap-types` | IDs, resource/profile descriptions, operation/status/error DTOs, request/response stream contracts, `AgentService` interface | No secret values, filesystem discovery, CLI, MCP SDK, or network connections |
-| `aap-policy` | `PolicySet`, grant evaluation, origin/route/address rules, safe decision reasons | Evaluates supplied facts; does not resolve DNS, fetch secrets, or send requests |
+| `aap-policy` | Catalog/profile validation, grant evaluation, origin/route/address rules, safe decision reasons | Evaluates supplied facts; does not resolve DNS, fetch secrets, or send requests |
 | `aap-config` | Private directory/file handles, bounded JSON reads, owner/mode/ACL/link checks, atomic file replacement | Trusted filesystem access only; no policy decisions, credential resolution, or process-global path discovery |
 | `aap-secrets` | `SecretStore` trait, private store references, version/availability contract, guarded secret values | No agent-facing secret retrieval API; backend dependencies remain outside this crate |
-| `aap-store-sqlite` | SQLCipher-backed store, transactional item versions, schema/key lifecycle | Non-macOS daemon default; native database dependency is confined here |
-| `aap-store-keychain` | Native credential storage, authorized existing-item enrollment, access/lock semantics | macOS daemon default; no dependency from portable libraries |
-| `aap-auth` | `PasswordManager`, context-bound placeholders, login profiles, cookie jars, credential transforms, response secret capture | Depends on store abstractions; does not select arbitrary destinations or open connections |
-| `aap-observe` | `ObservationEvent`, sink/subscription interfaces, redacted chunks, sequence/gap tracking, bounded export | Receives safe views; never serializes raw authenticated requests or store responses |
+| `aap-store-sqlite` | SQLCipher-backed store, transactional item versions, schema/key lifecycle | Current Linux daemon backend; native database dependency is confined here |
+| `aap-store-keychain` (planned) | Native credential storage, authorized existing-item enrollment, access/lock semantics | Future macOS default; absent from current manifests |
+| `aap-auth` | Context-bound placeholders, login transforms, cookie jars, credential transforms, response secret capture | Depends on store abstractions; does not select arbitrary destinations or open connections; engine owns vault discovery/lifecycle |
+| `aap-observe` | `Event`/`Record`, recorder/subscription interfaces, redacted chunks, sequence/gap tracking, bounded export | Receives safe views; never serializes raw authenticated requests or store responses |
 | `aap-transport` | DNS resolution results, admitted endpoint dialing, HTTP streaming, TLS client/server primitives, bounded TCP relay | No credential lookup or implicit redirect/retry; caller supplies admitted routing and request data |
 | `aap-engine` | `Broker`, privileged session creation/revocation, session-scoped `AgentService`, `ApprovalProvider`, quotas, operation deduplication, request pipeline | One behavior path for daemon and embedded use; contains no CLI, approval UI, or provider SDK |
 | `aap-http` | Forward-proxy/CONNECT ingress, inspected HTTP handling, local operation/status endpoints, stream framing | Converts admitted connections into session-scoped engine operations; no independent auth policy |
 | `aap-mcp` | `vault.*` tools, constrained internet-access tool, stdio bridge | Credential-free translation to `AgentService`; no upstream private session state or connector |
 | `aap-mcp-upstream` | Pinned remote MCP lifecycle, private session IDs, request-ID mapping, tool/message validation and safe response transforms | Trusted protocol component introduced in W7; no store lookup, independent connector, approval authority, or SDK types in core public contracts |
-| `aap-providers` | Approved provider routes, request schemas, model/tool constraints, response/usage interpretation | Supplies profiles to the engine; no credential ownership, provider HTTP client, or conversation abstraction |
+| `aap-providers` | Text-only request inspection for the two controlled provider profiles | No credential ownership, provider HTTP client, conversation abstraction, or general tool/multimodal support |
 | `aap-client` | `DaemonSessionClient`, operation/status/cancel and vault DTOs, credential-free stdio bridge support | Agent-safe dependency closure; no engine, secret store, private cookie, or CA key dependencies |
 | `aap-daemon` | `agent-auth-proxy` executable, configuration, socket/listener setup, operator administration, service lifecycle | Thin composition root; no duplicate substitution, policy, cookie, or observation logic |
-| `aap-test-support` | Fake store, controlled resolver/clock, test origins, observation collector, synthetic credentials | Development dependencies only; never a production store fallback |
+| `aap-test-support` | Synthetic local TLS origins, controlled replies, upstream receipt/connection counters | Development dependencies only; higher-level store/approval fixtures live with their consumers |
 
 Website profiles describe exact fields, routes, and response handling. Keep
 simple profiles as validated data. Use reviewed Rust adapters for behavior that
@@ -106,8 +110,9 @@ plugins, or a general browser automation engine in the first release.
 
 ## Dependency direction
 
-This table lists direct dependencies between production workspace crates;
-external Rust dependencies and development-only edges are omitted.
+This table lists current direct dependencies between production workspace
+crates; external Rust dependencies and development-only edges are omitted.
+The Keychain row is the proposed exception, not a current Cargo dependency.
 
 | Crate | Direct workspace dependencies |
 | --- | --- |
@@ -115,18 +120,18 @@ external Rust dependencies and development-only edges are omitted.
 | `aap-policy` | `aap-types` |
 | `aap-config` | `aap-types` |
 | `aap-secrets` | `aap-types` |
-| `aap-auth` | `aap-types`, `aap-secrets` |
+| `aap-auth` | `aap-types`, `aap-secrets`, `aap-policy` |
 | `aap-observe` | `aap-types` |
 | `aap-transport` | `aap-types` |
-| `aap-engine` | `aap-types`, `aap-policy`, `aap-secrets`, `aap-auth`, `aap-observe`, `aap-transport`; `aap-mcp-upstream` when W7 is implemented |
+| `aap-engine` | `aap-types`, `aap-policy`, `aap-secrets`, `aap-auth`, `aap-observe`, `aap-transport`, `aap-mcp-upstream` |
 | `aap-http` | `aap-types`, `aap-transport` |
 | `aap-mcp` | `aap-types` |
 | `aap-mcp-upstream` | `aap-types`, `aap-auth` |
 | `aap-providers` | `aap-types` |
 | `aap-client` | `aap-types` |
 | `aap-store-sqlite` | `aap-types`, `aap-secrets`, `aap-config` |
-| `aap-store-keychain` | `aap-types`, `aap-secrets` |
-| `aap-daemon` | `aap-types`, `aap-engine`, `aap-policy`, `aap-config`, `aap-secrets`, `aap-observe`, `aap-transport`, `aap-http`, `aap-mcp`, `aap-providers`, `aap-client`; platform-selected `aap-store-sqlite` or `aap-store-keychain` |
+| `aap-store-keychain` (planned) | `aap-types`, `aap-secrets` |
+| `aap-daemon` | `aap-types`, `aap-engine`, `aap-policy`, `aap-config`, `aap-secrets`, `aap-observe`, `aap-transport`, `aap-http`, `aap-mcp`, `aap-providers`, `aap-client`; `aap-store-sqlite` on Linux |
 
 `AgentService` is the narrow agent-facing interface. The engine implements it
 on a session handle; the remote client implements it over the daemon connection.
@@ -135,7 +140,7 @@ The daemon's credential-free `mcp-bridge` subcommand composes the client and MCP
 adapter, while the trusted `serve` subcommand composes the complete broker.
 Bridge mode never opens the secret store or loads privileged daemon configuration.
 
-The proposed [TCP stream binding](tcp-binding.md) also uses the session socket.
+The implemented [TCP stream binding](tcp-binding.md) also uses the session socket.
 Keep its credential-free DTO/frame contracts in `aap-types`, HTTP upgrade in
 `aap-http`, and agent-side handling in `aap-client`; the engine remains the sole
 admission and lifecycle authority. Trusted embedders use equivalent bounded

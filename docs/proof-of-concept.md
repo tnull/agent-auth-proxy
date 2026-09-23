@@ -1,15 +1,50 @@
 # Proof-of-concept delivery and evidence
 
-This tracks implementation of [the plan](../plan/implementation.md), not a
-replacement specification. Unchecked items are not implemented or verified.
-The end-to-end proof must use real transports and the encrypted store, not
-only mocked component tests. Tests use synthetic credentials and local origins.
+This page separates current implementation status from the historical evidence
+log for [the design](../plan/implementation.md). The small Linux demo checkpoint
+is delivered; the broader acceptance/release checklist is not fully signed off.
+All service compatibility evidence below uses synthetic credentials and local
+origins, not personal accounts or live model providers.
 
-The user's immediate small-demo checkpoint is now available through
-[`scripts/demo.sh`](../scripts/demo.sh); see [the hands-on guide](demo.md).
-This is distinct from completing every broader acceptance gate below.
+## Current status
+
+Snapshot: 2026-09-23. Start with [`scripts/demo.sh`](../scripts/demo.sh) and
+[the hands-on guide](demo.md); see the [README architecture](../README.md#architecture)
+for the trust boundary and crate map.
+
+| Area | Current implementation and evidence | Remaining boundary |
+| --- | --- | --- |
+| Runnable demo | Real daemon + stdio MCP + local HTTPS, persistent SQLCipher vault, provider/form walkthrough, generated client settings, observation export; `serve`, `smoke`, and `check` verified | Synthetic only; convenience key stored beside the vault; no sandbox launcher |
+| Workspace | 16 documented crates, pinned Rust 1.95.0, declared 1.88 MSRV, committed lockfiles and CI definitions | Packages unpublished; no distribution license or observed remote CI result |
+| Custody/configuration | Pluggable store contract; actual SQLCipher encryption, lock/version checks, backup/rekey primitives; private JSON catalog/config with paired revisions | General enrollment and offline restore/interruption-recovery workflows incomplete; no Keychain adapter |
+| Provider brokerage | Two narrow text-only profiles, verified TLS, header injection, sanitized bounded streams, operation status/cancellation | Not a complete provider API, model SDK, or tool-calling/multimodal compatibility claim |
+| Website/password manager | Authorized item lookup and fake credentials; form/JSON login, private cookies/CSRF, enrolled 303 transition, logout and invalidation | Profiled JSON responses, not arbitrary browser/HTML/SSO support |
+| Local MCP | Seven strict vault/request tools over real stdio; HTTP operations use the same session engine | No direct secret retrieval, administrative tools, or automatic rerouting of the agent's model calls |
+| CONNECT | Session-bound inspected HTTP/1.1 with scoped downstream CA and independent upstream TLS; provider/website/remote-MCP fixtures | No HTTP/2/3, WebSocket, pinning bypass, or general opaque fallback |
+| Remote MCP / TCP | Pinned remote JSON/SSE profile with private state; enrolled framed TCP with credential-free client and half-close/status/cancel | Broader concurrency, allocation, protocol-observation, and compatibility matrices remain open |
+| Observation | Redacted logical views, scoped collectors, gaps/resume/acknowledgments, required-mode failure behavior | Bounded local memory, not durable delivery or complete physical-connection/MCP-wire coverage |
+| Approval / lifecycle | Async trusted approval interface; revocation, deduplication, ordered reload commitment, retained cleanup jobs, independently cancelled/joinable HTTP drivers | No production approval UI/signatures; whole-host drain and shared cross-generation accounting incomplete |
+| Confinement | Six opt-in Linux tests: provider, MCP website, CONNECT provider, CONNECT website, remote MCP, TCP; real namespaces and live bypass controls | Controlled fixture boundary only; wider bypass/process-tree/deployment matrix incomplete |
+| Reuse | Independent client, embedded host, and custom-adapter workspaces | No Goose/GDK integration; full daemon/embedded parity remains open |
+
+The most recent implementation verification passed 355 ordinary root-workspace
+tests on Rust 1.95.0 (333 unit, 21 process, one doctest), all-target checks,
+formatting, and Clippy with warnings denied. The two new demo tests and daemon
+all-target checks also passed on 1.88.0. Before the demo-only addition, the full
+workspace, ten independent-consumer tests, and six opt-in confinement tests
+passed on both compilers. These are separate runs; ordinary `cargo test` does
+not run the ignored confinement tests or independent consumer workspaces.
+
+Keychain/macOS work is explicitly deferred from the small-demo checkpoint.
+The [last delivery entry](#runnable-small-demo-checkpoint) records its commands,
+boundaries, and evidence in more detail.
 
 ## Completion checklist
+
+These unchecked work packages mean **complete package acceptance has not been
+signed off**, not that every listed capability is absent. Use the current
+status above for implemented functionality; retain these broader gates as the
+target for a hardened operational release.
 
 - [ ] W0: Git-managed workspace, documented crates, toolchain, CI and dependency checks.
 - [ ] W1: Strict contracts, session binding, policy, expiry/revocation and operation deduplication.
@@ -23,20 +58,20 @@ This is distinct from completing every broader acceptance gate below.
 - [ ] W9: Direct macOS Keychain adapter and existing-item enrollment; identify macOS-only validation.
 
 HTTP/2, WebSocket, cross-origin federation, additional site adapters, OAuth
-interactive enrollment and human approval are declared individually rather than
-silently passed through. Unsupported traffic must fail explicitly. The first
-supported form login, provider path, MCP and TCP coverage are required; replacing
-them with a generic request example does not complete this proof.
+interactive enrollment and production human-approval integrations remain
+separate coverage gates. Unsupported traffic fails explicitly. The async
+approval extension exists; that is not a delivered UI or signed-response scheme.
 
 ## Implementation choices
 
-- Start with the installed Rust 1.95 toolchain; declare Rust 1.88 compatibility
-  and verify it before completion.
+- Pin Rust 1.95.0 and declare Rust 1.88 compatibility; the evidence distinguishes
+  full-workspace checks from narrower checks of subsequent changes.
 - Keep dependencies scoped; no `secrecy`, ORM, or general plugin system.
-- Use `security-framework` directly for Keychain. Narrow low-level bindings may
-  supplement it; a Swift bridge is not necessary.
+- The planned Keychain backend uses `security-framework` directly, with narrow
+  low-level bindings if needed. It is not implemented; no Swift/UniFFI bridge is
+  required or included.
 - Do not modify Goose or Loupe. Their integration seams remain research inputs.
-- Native macOS runtime checks may remain explicitly unverified on this Linux host.
+- Native macOS implementation and runtime checks are deferred from the demo.
 - Leave product/license/production enrollment questions for the final handoff.
 - Catalog metadata lives in private versioned JSON, separate from credentials:
   user-owned `0700` directories and `0600` files, safe descriptor-based opening,
@@ -46,6 +81,11 @@ them with a generic request example does not complete this proof.
   and UI are later adapters; approval-required requests fail closed without one.
 
 ## Evidence log
+
+Historical entries follow in delivery order, oldest first. Test counts,
+"pending" statements, and partial implementations describe their state at
+that point; later entries supersede them. They are preserved as provenance,
+not as the current feature inventory.
 
 W0 foundation: the three initial contract crates build and their empty test
 suites run under Rust 1.95.0. Crates are added as their implementation begins.

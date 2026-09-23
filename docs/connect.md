@@ -103,9 +103,15 @@ and CSRF, context ambiguity, destination/SNI/Host denial, missing trust,
 invalid/expired/mismatched CA material, required-observation failure, and CA-item
 rotation after handshake. All credentials and certificates are synthetic.
 
+The separate [Linux confinement suite](confinement.md) now runs provider and
+website CONNECT clients in actual namespaces, and remote MCP over CONNECT in
+its remote-MCP case. Those fixtures add live bypass canaries and authority
+failure checks; ordinary TLS/process tests alone do not establish isolation.
+
 This does not establish universal browser compatibility, arbitrary HTML or
 script login, pinned-TLS bypass, HTTP/2/3, WebSockets, complete TLS lifecycle/wire
-observations, or sandbox egress confinement. Complete directional views and
-correlated connection lifecycle events remain part of the observation milestone.
+observations, or complete sandbox egress confinement. Complete directional
+views and correlated connection lifecycle events remain part of the observation
+milestone.
 The process fixtures use DNS authorities and loopback IPv4; IP-SAN issuance is
 unit-tested, but literal-IPv6 end-to-end forwarding is not yet established.

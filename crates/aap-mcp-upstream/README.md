@@ -13,7 +13,8 @@ Validated messages do not authorize a connection or credential use.
 
 The engine now has real HTTPS initialization/list/call and admitted server-ping
 child/cancellation and local-first DELETE tests. Actual daemon, bridge, and
-CONNECT fixtures cover the pinned profile too; broader gateway acceptance
+CONNECT fixtures cover the pinned profile too, including the separate
+[Linux confinement case](../../docs/confinement.md). Broader gateway acceptance
 remains incomplete. `validate_control_ack` checks a control POST's status
 and headers. `validate_cleanup_ack` accepts only safe 200/204 or 405 cleanup
 headers; the host must also require an empty, trailer-free body through EOF.

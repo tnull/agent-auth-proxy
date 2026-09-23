@@ -1,4 +1,4 @@
-# Standalone daemon: initial Linux contract
+# Standalone daemon: current Linux contract
 
 This describes implemented behavior, not the full planned product. The current
 daemon brokers explicitly submitted API-key and profiled website requests, with
@@ -263,9 +263,9 @@ add JSON/SSE, native session/account isolation, stdio bridging, CONNECT,
 reviewed tool admission, private control children, cancellation, DELETE, and
 uncertain-delivery/no-replay evidence. These ordinary fixture processes do not
 establish a sandbox boundary; a separate opt-in [Linux fixture](confinement.md)
-now exercises provider, MCP website, and TCP paths with actual
-filesystem/network/process isolation. Confined remote MCP and CONNECT coverage
-remain pending.
+exercises provider, MCP website, CONNECT provider/website, remote MCP, and TCP
+paths with actual filesystem/network/process isolation. This is six controlled
+fixtures, not completion of the wider confinement/deployment matrix.
 The tunneled website test also runs the enrolled 303 variant: no implicit
 follow-up is sent, and its separately submitted GET has no credential body.
 

@@ -27,7 +27,8 @@ TCP resources cannot own catalog credentials or be used as HTTP profiles.
 `TcpProfile::admit_addresses` checks every candidate address and port, rejects
 scope/flow overrides and substitution of a literal IP, then chooses one address
 without authorizing retries. It performs no DNS or dialing. These enrollment
-contracts do not yet provide an operational TCP relay.
+contracts are composed by the implemented [engine/client TCP path](../../docs/tcp.md);
+this policy crate alone does not relay traffic.
 
 `AddressPolicy::permits_all` checks a complete DNS result. The caller must then
 dial one of those admitted addresses without re-resolution, retain the approved

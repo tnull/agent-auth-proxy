@@ -3,7 +3,8 @@
 Thin Linux composition root for the reusable broker, encrypted store, and local
 adapters. Configuration and catalog are separate private JSON files with one
 matching revision. Operator and observation authority use separate sockets from
-every agent session. Native macOS custody is not replaced by SQLite on macOS.
+every agent session. The executable currently supports Linux only; the native
+macOS Keychain adapter is not implemented.
 
 The Linux CLI supports `validate CONFIG_DIRECTORY`, `serve CONFIG_DIRECTORY`,
 and the credential-free `mcp-bridge SESSION_SOCKET`. Only `serve` opens an
@@ -11,6 +12,12 @@ existing SQLCipher store using exactly 32 raw key bytes plus
 EOF on standard input from a trusted launcher. It does not accept an unlock key
 in arguments, environment variables, or JSON. See the [operator contract](../../docs/daemon.md)
 and [process tests](tests/process.rs) for configuration and synthetic execution.
+
+The [demo launcher](../../docs/demo.md) supplies a synthetic-only bootstrap:
+persistent private SQLCipher state, a local HTTPS fixture, generated MCP client
+settings, and a real stdio MCP provider/form-login walkthrough. Its Rust example
+is separate from the production CLI. Two additional process tests cover demo
+startup, persistence/restart, permissions, and refusal of unsafe/unknown state.
 
 Nineteen ordinary real-process tests exercise brokerage/observation, reload,
 startup refusal, crash/restart, expiry, and the controlled website login/password-manager flow

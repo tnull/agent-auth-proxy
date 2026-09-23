@@ -172,8 +172,10 @@ committed operation cannot rewrite it.
 The [HTTP adapter](../../docs/tcp.md) now supplies a daemon TCP endpoint using
 these same handles: OPENED precedes payload, SEND_END is explicit, raw EOF fails,
 and bounded final-control delivery is separate. Engine tests exercise that
-adapter through real TCP with a spy asserting no store access. The agent client,
-broader race/overload acceptance, and actual confinement remain pending.
+adapter through real TCP with a spy asserting no store access. The credential-free
+agent client and actual Linux confinement fixture also exercise this endpoint;
+broader race/overload and deployment acceptance remain open. See the
+[current TCP evidence](../../docs/tcp.md#verification-and-reuse).
 
 ## Remote MCP integration
 
@@ -247,6 +249,8 @@ Repeated closure does not release someone else's barrier or dispatch again.
 This is not the complete remote gateway.
 Actual daemon/bridge/CONNECT fixtures now exercise JSON/SSE, account/session
 isolation, control children, cancellation, cleanup, and no-replay uncertainty.
+A separate [confined remote-MCP fixture](../../docs/confinement.md) exercises
+stdio and CONNECT paths inside Linux namespaces with live bypass controls.
 Protocol-specific observation metadata and broader race/overload coverage
 remain pending. These tests must not be described as completing W7.
 
@@ -318,4 +322,6 @@ agent delivery; the agent still receives the fake values needed for submission.
 The recorder is a bounded local memory acceptance channel. Required recording
 must succeed before dispatch and before releasing each sanitized response
 chunk. It is not a durable audit log or a detector approval. Observation export
-is provided by the daemon; the complete planned envelope/views remain pending.
+is provided by the daemon with scoped collectors and logical directional views.
+Physical connection/MCP-wire coverage and the broader observation acceptance
+matrix remain incomplete; see [current observation](../../docs/observation.md).

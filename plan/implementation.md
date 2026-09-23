@@ -2,11 +2,14 @@
 
 This plan implements the password-manager and credential-injection design as
 the [Rust workspace](rust-workspace.md). The first product is a freestanding
-daemon; reusable library APIs are exercised throughout development. Starter
-manifests and initial contracts now exist. This document specifies required
-work; [the delivery tracker](../docs/proof-of-concept.md) records evidence, and
-[the proposed first proof](proof-of-concept.md) narrows initial coverage and
-demonstration limits.
+daemon; reusable library APIs are exercised throughout development. The
+16-crate workspace and [small Linux demo](../docs/demo.md) are implemented.
+This document retains the broader required work, not a current to-do list;
+[the delivery tracker](../docs/proof-of-concept.md#current-status) distinguishes
+implemented capabilities from complete work-package acceptance. The
+[proof-of-concept scope](proof-of-concept.md) records the delivered experiment
+checkpoint separately from the wider release gates. Keychain/macOS is deferred
+from that checkpoint, not removed from the macOS release requirements.
 
 ## Initial release boundary
 

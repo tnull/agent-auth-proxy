@@ -1,15 +1,21 @@
 # Agent authentication proxy plan
 
-Status: proposed design, version 0.11. Updated on 2026-09-23.
+Status: design and remaining requirements, version 0.12. Updated on 2026-09-23.
 
 Build a freestanding daemon that mediates an agent's model, HTTP, TCP, and
 MCP traffic, holds upstream credentials outside the agent sandbox, and exports
-observable streams to independent consumers. The intended implementation
-language is Rust. This plan specifies boundaries, behavior, authentication
+observable streams to independent consumers. The implementation language is
+Rust. This plan specifies boundaries, behavior, authentication
 contracts, reusable crate responsibilities, storage backends, and implementation
-milestones. The workspace now includes an initial provider-brokerage daemon;
-the complete proxy and its security guarantees are not yet verified. See the
-[implementation evidence](../docs/proof-of-concept.md) for actual progress.
+milestones. A 16-crate Rust workspace and runnable Linux demo now exist, with
+provider, website, MCP, CONNECT, TCP, observation, and reuse fixtures. This is
+not verification of every proposed security/release requirement. Start with
+the [current architecture](../README.md#architecture), [demo](../docs/demo.md),
+and [implementation status](../docs/proof-of-concept.md#current-status).
+
+The immediate small-demo checkpoint is delivered. Keychain/macOS, production
+enrollment/recovery, UI/signing, and broader lifecycle/deployment hardening
+remain follow-ups; the requirements below retain that longer-term scope.
 
 ## Documents
 
@@ -54,7 +60,8 @@ The daemon is a password manager backed by a secret store: its MCP tools let
 the agent discover authorized site/items and request usable fake login values.
 Real values are resolved from the store only inside the trusted boundary.
 
-The system makes two security claims:
+The design targets two scoped security properties (not unconditional claims
+about the current demo):
 
 1. **Credential isolation:** managed credentials stay outside the agent's
    environment, filesystem, request/response view, and ordinary telemetry.

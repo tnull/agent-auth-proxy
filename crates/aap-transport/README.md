@@ -7,7 +7,7 @@ an endpoint. This crate owns no grants, credential store, redirects, or retries.
 
 Caller-provided trust roots and the existing Tokio runtime are used explicitly;
 there is no global TLS provider installation or process configuration change.
-Only HTTP/1.1 is advertised initially. Response bytes/headers from this low-level
+Only HTTP/1.1 is advertised. Response bytes/headers from this low-level
 interface are private upstream data and must pass the engine's authentication
 capture and sanitization before reaching an agent or observation consumer.
 
@@ -77,8 +77,9 @@ The returned owned duplex I/O belongs to the trusted engine, not the agent.
 After connection, that owner must enforce authorization, cancellation, relay
 buffers/deadlines, observation, framing, and terminal write counters. Four tests
 cover strict endpoints, real binary traffic with both half-close orders, and
-deterministic attempt cancellation/expiry/failure/drop. They do not yet establish
-an operational agent TCP relay; engine and local adapter integration is pending.
+deterministic attempt cancellation/expiry/failure/drop. The [engine and local
+TCP endpoint](../../docs/tcp.md) compose this connector with the credential-free
+client; connector tests alone do not establish those higher-level semantics.
 
 ## Bounded duplex I/O
 
@@ -117,8 +118,8 @@ required-gate rejection, cancellation before writes, partial-write accounting,
 exact/exceeded directional limits, real driver wakeups, idle/lifetime/stall
 deadlines, bounded ready-peer polling, and unpolled owner termination. The
 [engine](../aap-engine/README.md#tcp-admission-and-connection-ownership) now adds
-owned lifecycle, observation, and final commitment for trusted application I/O;
-the local framed protocol is still pending. A framed
-adapter must map explicit SEND_END to application EOF, unexpected attachment
-EOF to failure, and maintain separate bounded final-control delivery; these
-native-stream fixtures do not establish those agent-wire semantics.
+owned lifecycle, observation, and final commitment for trusted application I/O.
+The implemented [local framed endpoint](../../docs/tcp.md) maps explicit SEND_END
+to application EOF, unexpected attachment EOF to failure, and keeps bounded
+final-control delivery separate. Its client, daemon, and confinement tests are
+distinct from these lower-level native-stream fixtures.

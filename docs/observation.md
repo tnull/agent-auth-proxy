@@ -114,8 +114,9 @@ Only two orderly ends and an accepted required terminal batch permit completed
 status. Cancellation/drop/timeouts attempt incomplete endings and preserve
 actual write counts. Required recording outages stop new forwarding; best-effort
 loss follows the existing gap contract. The [local framed endpoint](tcp.md) now
-uses the same engine gate, with a real daemon TCP fixture. Broader concurrency,
-physical connection coverage, and confinement acceptance remain pending.
+uses the same engine gate, with real daemon and [confined TCP](confinement.md)
+fixtures checking directional content and terminal outcomes. Broader concurrency,
+physical connection coverage, and the full confinement matrix remain pending.
 
 ## Scoped collectors
 

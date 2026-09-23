@@ -18,6 +18,39 @@ authorized subscription. Its synthetic store is integration-test-only; normal
 and test dependency graphs exclude SQLCipher and Apple bindings. See its
 [handoff contract and commands](../examples/reuse/adapters/README.md).
 
+## Goose / GDK integration direction
+
+This is a proposed integration using existing building blocks, not a completed
+Goose/GDK adapter. No neighboring project has been changed.
+
+For a first experiment, keep the broker in the external daemon. A trusted host
+creates a restricted session and gives Goose's MCP extension only the command
+`agent-auth-proxy mcp-bridge SESSION_SOCKET`. The [demo](demo.md) generates the
+command, arguments, and agent prompt. This exposes password-manager and bounded
+request tools; it does not reroute Goose's own model calls or restrict an
+unsandboxed tool's other networking.
+
+For model traffic, implement a GDK provider adapter at the provider abstraction
+that submits serialized requests through `aap-client` and translates responses
+back into the caller's stream/message types. It must preserve cancellation,
+operation identity, and uncertain outcomes without automatically retrying a
+possibly dispatched action. The present provider inspector is text-only;
+Goose tool-call/multimodal schemas and live-provider compatibility need explicit
+additional support, not just a base-URL setting or a supplied fake API key.
+
+A trusted Rust GDK host can instead compose `aap-engine` and selected adapters
+in its own runtime, following the embedded example. Expose session-scoped
+`AgentService` to the application/tool layer, never the `Broker` administration
+handle or `SecretStore`. That process is trusted and must remain outside any
+untrusted agent/tool sandbox. A UI can later implement `ApprovalProvider`;
+signed decisions and push UI are not supplied by the current proxy.
+
+These hooks are independent of the execution loop: both model requests and
+tool-side requests must reach the broker, and mandatory egress confinement is
+still the host launcher's responsibility. Existing GDK telemetry can be
+correlated with proxy observations, but telemetry callbacks do not establish
+credential custody, authorization, or a network boundary.
+
 ## Current shared scenarios
 
 Both consumers run the same driver with form and JSON login profiles. Each run

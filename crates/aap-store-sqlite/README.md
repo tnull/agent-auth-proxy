@@ -54,9 +54,10 @@ existing worker ownership, not forced interruption, secret-memory erasure, or
 a complete broker/daemon drain API. Only tests enable Tokio's timer feature for
 bounded fixture waits; no normal dependency or store interface changes.
 
-This package is still part of an unfinished proof of concept. Process-crash
-fault tests, future schema-upgrade handling, shared cross-backend conformance,
-and daemon integration remain required work. macOS uses the separate Keychain
-adapter, not this backend.
+The Linux daemon, [hands-on demo](../../docs/demo.md), and independent embedded
+example use this backend. Process-crash maintenance/recovery fault tests, future
+schema-upgrade handling, and shared cross-backend conformance remain required
+before operational release. The planned macOS Keychain adapter is not yet
+implemented; the daemon does not substitute SQLite as a macOS backend.
 
 [SQLCipher keying and verification](https://www.zetetic.net/sqlcipher/sqlcipher-api/)

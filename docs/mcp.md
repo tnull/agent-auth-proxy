@@ -6,6 +6,10 @@ The Linux daemon binary supports:
 agent-auth-proxy mcp-bridge /sandbox/proxy.sock
 ```
 
+For a provisioned synthetic session and generated client settings, start the
+[hands-on demo](demo.md). It exercises this actual stdio bridge; connecting it
+does not automatically proxy the client's separate model-provider requests.
+
 A trusted launcher supplies this session socket and confines the bridge with
 the agent. The command does not load daemon configuration, read an unlock key,
 or open a secret store. It uses `aap-client` to reach the daemon's existing
@@ -57,6 +61,75 @@ cancellation decision, then `request.status` to inspect authoritative state.
 Transport loss or bridge shutdown never proves rollback or remote cancellation.
 The daemon's deadlines remain a fallback if local cleanup cannot reach it.
 
+## Password injection example
+
+Suppose a trusted operator has enrolled `account` for
+`https://demo.test/session`, with form fields `user` and `password`. The store
+holds the synthetic username `alice` and password `demo-secret&42`; neither is
+returned to the agent.
+
+The agent calls `vault.get_login` with that item, its allowed login-page URI,
+and a fresh request ID. It receives an `auth_context`, submission instructions,
+and credentials whose `kind` is `placeholder`. The current formats are:
+
+```text
+username: aap_un1_<43 base64url characters>
+password: aap_pw1_<43 base64url characters>
+CSRF:     aap_cs1_<43 base64url characters>
+```
+
+Each suffix encodes 32 independently generated random bytes, without padding;
+the complete marker is 51 characters. It is not a password hash, encrypted
+password, or a token the website recognizes. For example, a password marker
+could look like this (illustrative, not an issued credential):
+
+```text
+aap_pw1_V7hYtK3mN9pQ2rS8uW4xA6bC0dE5fG1jL7nP9sT2vXk
+```
+
+For the demo's CSRF-enabled profile, the agent first requests `GET /login`
+through the same context. The proxy retains the site's real CSRF value and
+returns its marker. It then accepts this logical form submission from the
+agent; the username and CSRF markers below are abbreviated:
+
+```http
+POST /session HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+user=aap_un1_...&password=aap_pw1_V7hYtK3mN9pQ2rS8uW4xA6bC0dE5fG1jL7nP9sT2vXk&csrf=aap_cs1_...
+```
+
+Over MCP, `request.execute` carries the target, headers, `auth_context`, and
+base64-encoded body; the above is the logical HTTP content, not the MCP envelope.
+The proxy validates session/item/destination policy and the exact configured
+fields against that context, obtains any required approval, and only then
+resolves the current credential from the store. The parser replaces those
+fields and re-encodes the body. The site receives, over verified HTTPS:
+
+```http
+POST /session HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+user=alice&password=demo-secret%2642&csrf=site-csrf-value
+```
+
+`%26` is the form encoding of the password's literal `&`. This is structural
+substitution, not a global text search-and-replace. JSON profiles similarly
+replace declared JSON-pointer fields. Duplicate fields, wrong-context markers,
+and markers in unexpected website-request fields are rejected.
+
+On a successful login, the proxy captures `Set-Cookie` into its private cookie
+jar and strips it from the agent's response. Later requests using the same
+`auth_context` receive the appropriate upstream `Cookie` header inside the
+proxy. Observation views redact credentials, cookies, and markers.
+
+The placeholders are reusable within their authorized context, not one-time
+challenge responses. Context lifetime is capped at ten minutes and can be
+shorter because of session or store validity. Logout, expiry, revocation, and
+credential-version changes invalidate their authority. A copied marker alone
+does not grant another session access, but it still lets an already authorized
+agent request permitted actions: policy and confinement remain necessary.
+
 ## Bounds and lifecycle
 
 Input messages are at most 2 MiB, output messages 4 MiB, and buffered HTTP
@@ -97,7 +170,10 @@ and JSON password-manager flows through actual MCP subprocesses in two isolated
 sandboxes. Both the agent and tool children run bypass probes. It covers fake
 credentials, private cookies/CSRF, cross-session denial, logout independence,
 required-recording failure with visible observation gaps, and unavailable
-approval. Remote MCP and CONNECT have not yet been run inside that sandbox.
+approval. Separate confinement cases now exercise provider and website CONNECT
+and remote MCP through stdio/CONNECT as well. See the
+[coverage matrix](confinement.md#checks-and-limits-of-the-evidence) for their live
+bypass controls and the broader deployment checks still missing.
 
 Run `cargo test -p aap-daemon --test process remote_mcp` for real remote MCP
 exchanges using SQLCipher, separate daemon/bridge processes, and independent
@@ -141,6 +217,7 @@ handshake nor a new local bridge makes retrying a business action safe.
 
 The reusable adapter also accepts an in-process `AgentService`; it imports no
 engine/store code. Broader remote MCP concurrency/overload acceptance, local MCP
-over HTTP, complete MCP-wire observation, the full remote-MCP confinement matrix, and external
-embedding conformance remain separate delivery gates. The bounded request tool is not
-the model streaming endpoint and does not buffer an unlimited model stream.
+over HTTP, complete MCP-wire observation, the full remote-MCP confinement matrix,
+and external embedding conformance remain separate delivery gates. The bounded
+request tool is not the model streaming endpoint and does not buffer an unlimited
+model stream.

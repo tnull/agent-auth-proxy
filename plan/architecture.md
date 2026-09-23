@@ -1,5 +1,12 @@
 # Architecture and trust boundaries
 
+This is the target security architecture, including requirements for features
+not yet implemented. The [README](../README.md#architecture) describes today's
+composition, and the [current status](../docs/proof-of-concept.md#current-status)
+distinguishes working Linux fixtures from remaining deployment/platform gates.
+In particular, Keychain, OAuth refresh, HTTP/2, and WebSocket behavior described
+below are not delivered capabilities.
+
 ## Roles
 
 The **agent sandbox** contains the agent, its tools, and any credential-free

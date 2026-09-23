@@ -27,8 +27,9 @@ limits and distinct phase timers described in [tcp.md](tcp.md).
 | `/aap/v1/stream/open` | `{"request_id":"…","resource":"…"}` plus required Upgrade headers | Existing status or one framed TCP attachment |
 
 Exposure of a method does not imply the engine supports every profile. The
-broker implements API-key execution, the controlled website profile, and the
-four password-manager methods. CONNECT admission checks resource grants, DNS
+broker implements API-key execution, controlled website profiles, pinned remote
+MCP, the four password-manager methods, and separately enrolled TCP streams.
+CONNECT admission checks resource grants, DNS
 addresses, and required observation, without reading site credentials.
 Tunneling requires the host to configure [interception](connect.md); calling
 the admission endpoint alone never issues a certificate or opens a tunnel.
