@@ -375,6 +375,60 @@ async fn broker_close_stops_polled_response_delivery_without_claiming_rollback()
 }
 
 #[tokio::test]
+async fn broker_close_terminates_unpolled_http_without_closing_a_shared_peer() {
+    let mut fixture = Fixture::new().await;
+    let mut reply = Reply::body("data: delayed\n\n");
+    reply
+        .headers
+        .push(("content-type".into(), "text/event-stream".into()));
+    reply.delay = Duration::from_secs(30);
+    fixture.origin = Origin::spawn(reply).await;
+    let shared = Arc::new(HttpsTransport::new([fixture.origin.certificate.clone()]).unwrap());
+    let drivers = shared.http_drivers();
+    let mut configuration = fixture.configuration();
+    configuration.transport = shared.clone();
+    let first = Broker::new(configuration).unwrap();
+    let mut configuration = fixture.configuration();
+    configuration.transport = shared;
+    let second = Broker::new(configuration).unwrap();
+    let session = first.create_session(options()).unwrap();
+    let peer = second.create_session(options()).unwrap();
+    let request = fixture.request();
+    let held = session.execute(request.clone()).await.unwrap();
+    let operation = session.operation(&request.request_id).unwrap();
+    let independent = peer.execute(fixture.request()).await.unwrap();
+    assert_eq!(fixture.origin.active_connections(), 2);
+    first.close().unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while fixture.origin.active_connections() != 1 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("broker closure left an unpolled upstream socket alive");
+    assert_eq!(
+        operation.status().unwrap().state,
+        OperationState::OutcomeUnknown
+    );
+    assert!(!second.is_closed());
+    assert_eq!(drivers.status().tasks_pending, 1);
+    assert_eq!(
+        fixture.store.status().await.unwrap().availability,
+        aap_secrets::Availability::Ready
+    );
+    assert!(held.into_body().collect().await.is_err());
+    second.close().unwrap();
+    let joined = drivers
+        .wait_until_idle(Instant::now() + Duration::from_secs(2))
+        .await;
+    assert_eq!(joined.tasks_pending, 0);
+    assert!(!joined.join_failed);
+    assert!(independent.into_body().collect().await.is_err());
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 2);
+    assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn broker_close_stays_closed_and_notifies_every_session_on_cleanup_failure() {
     let fixture = Fixture::new().await;
     for poison_registry in [true, false] {

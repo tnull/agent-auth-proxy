@@ -15,6 +15,67 @@ impl aap_transport::Resolver for Fixed {
         })
     }
 }
+
+#[tokio::test]
+async fn embedded_host_joins_upstream_work_while_response_is_retained() {
+    use base64::Engine;
+    use http_body_util::BodyExt;
+    let fixture = fixture::Fixture::new(LoginEncoding::Form).await;
+    let host = Host::open(
+        Settings {
+            directory: Arc::new(
+                aap_config::PrivateDir::open(&fixture.root().join("s"), false).unwrap(),
+            ),
+            catalog: fixture.catalog.clone(),
+            profiles: fixture.profiles.clone(),
+            root_certificates: vec![fixture.origin.certificate.to_vec()],
+            resolver: Arc::new(Fixed(fixture.origin.address)),
+        },
+        fixture::Fixture::key(),
+        tokio::runtime::Handle::current(),
+    )
+    .await
+    .unwrap();
+    let session = host
+        .broker
+        .create_session(aap_engine::SessionOptions {
+            resources: vec!["provider".into()],
+            items: None,
+            lifetime: Duration::from_secs(60),
+            require_approval: false,
+            require_observation: true,
+        })
+        .unwrap();
+    let input = aap_types::ExecuteRequest {
+        request_id: aap_types::ids::random_id(16).unwrap(),
+        resource: "provider".into(), auth_context: None, method: "POST".into(),
+        target: format!("{}/v1/chat/completions", fixture.origin.origin()),
+        headers: vec![("content-type".into(), "application/json".into())],
+        body_base64: base64::engine::general_purpose::STANDARD.encode(
+            serde_json::to_vec(&serde_json::json!({"model":"fixture", "messages":[{"role":"user", "content":"cancel"}], "stream":true})).unwrap()),
+    };
+    let held = session.execute(input).await.unwrap();
+    assert_eq!(fixture.origin.active_connections(), 1);
+    assert_eq!(
+        host.http_drivers.status().tasks_pending,
+        1,
+        "host did not retain its transport owner"
+    );
+    host.broker.close().unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    let joined = host.http_drivers.wait_until_idle(deadline).await;
+    assert_eq!(joined.tasks_pending, 0);
+    assert!(!joined.join_failed);
+    tokio::time::timeout_at(deadline, async {
+        while fixture.origin.active_connections() != 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("embedded host left an upstream socket alive");
+    assert!(held.into_body().collect().await.is_err());
+    assert_eq!(fixture.origin.requests.lock().unwrap().len(), 1);
+}
 #[tokio::test]
 async fn external_sqlcipher_host_runs_the_shared_scenarios_without_a_daemon() {
     for encoding in [LoginEncoding::Form, LoginEncoding::Json] {

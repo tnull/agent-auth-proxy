@@ -58,6 +58,7 @@ pub struct Origin {
     pub certificate: CertificateDer<'static>,
     pub requests: Arc<Mutex<Vec<Captured>>>,
     accepted: Arc<AtomicUsize>,
+    active: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
@@ -66,6 +67,12 @@ impl Origin {
     pub fn accepted_connections(&self) -> usize {
         assert!(!self.task.is_finished(), "fixture listener stopped");
         self.accepted.load(Ordering::SeqCst)
+    }
+
+    /// Accepted connections whose server tasks have not yet been joined.
+    pub fn active_connections(&self) -> usize {
+        assert!(!self.task.is_finished(), "fixture listener stopped");
+        self.active.load(Ordering::SeqCst)
     }
 
     pub async fn spawn(reply: Reply) -> Self {
@@ -96,6 +103,8 @@ impl Origin {
         let handler = Arc::new(handler);
         let accepted = Arc::new(AtomicUsize::new(0));
         let receipts = accepted.clone();
+        let active = Arc::new(AtomicUsize::new(0));
+        let live = active.clone();
         let task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
             loop {
@@ -103,6 +112,7 @@ impl Origin {
                     accepted = listener.accept(), if connections.len() < 64 => {
                         let Ok((socket, _)) = accepted else { break; };
                         receipts.fetch_add(1, Ordering::SeqCst);
+                        live.fetch_add(1, Ordering::SeqCst);
                         let (acceptor, records, handler) = (acceptor.clone(), records.clone(), handler.clone());
                         connections.spawn(async move {
                             let Ok(stream) = acceptor.accept(socket).await else { return; };
@@ -123,7 +133,9 @@ impl Origin {
                             let _ = hyper::server::conn::http1::Builder::new().keep_alive(false).serve_connection(TokioIo::new(stream), service).await;
                         });
                     },
-                    _ = connections.join_next(), if !connections.is_empty() => {},
+                    _ = connections.join_next(), if !connections.is_empty() => {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                    },
                 }
             }
         });
@@ -132,6 +144,7 @@ impl Origin {
             certificate,
             requests,
             accepted,
+            active,
             task,
         }
     }

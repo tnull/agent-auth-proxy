@@ -17,6 +17,7 @@ pub struct Settings {
 }
 pub struct Host {
     pub broker: Broker,
+    pub http_drivers: aap_transport::http_drivers::HttpDrivers,
     pub recorder: Recorder,
     pub store: Arc<aap_store_sqlite::SqliteStore>,
 }
@@ -44,6 +45,7 @@ impl Host {
         let transport = aap_transport::HttpsTransport::new(
             settings.root_certificates.into_iter().map(Into::into),
         )?;
+        let http_drivers = transport.http_drivers();
         let broker = Broker::new(aap_engine::Configuration {
             catalog: settings.catalog,
             profiles: settings.profiles,
@@ -62,6 +64,7 @@ impl Host {
         })?;
         Ok(Self {
             broker,
+            http_drivers,
             recorder,
             store,
         })

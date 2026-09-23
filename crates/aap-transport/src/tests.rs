@@ -2,6 +2,8 @@ use super::*;
 use aap_test_support::{Origin, Reply};
 use http_body_util::BodyExt;
 
+mod lifecycle;
+
 fn request(origin: &str) -> http::Request<Bytes> {
     http::Request::builder()
         .method("POST")

@@ -50,9 +50,13 @@ Independent brokers and shared backing stores are not closed or locked.
 
 This synchronous operation is not complete shutdown. Hosts still stop their
 listeners, cancel/drop execution futures and response bodies, and join owned
-tasks with a finite deadline. In particular, an unpolled HTTP body can retain
-its connection driver until the owner drives cancellation or drops it. Native
-work may still finish later, and already dispatched effects cannot be undone.
+tasks with a finite deadline. The built-in HTTPS transport now stops cancelled
+upstream drivers even when a body is unpolled, and exposes a retained driver-join
+handle. A real TLS test closes one of two brokers sharing a transport and store,
+observes only its socket stop, and joins both drivers after separate closures.
+Held body buffers and engine permits still require body consumption/drop; driver
+joins do not establish their release. Native work may still finish later, and
+already dispatched effects cannot be undone.
 TCP revocation closes the sockets and capacity owned by retained TCP handles;
 that does not establish the broader drain contract for all adapters.
 See the remaining [lifecycle acceptance gates](../../plan/lifecycle.md).

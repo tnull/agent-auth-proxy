@@ -1859,3 +1859,54 @@ Active-generation shutdown cleanup, store locking, and runtime teardown still
 need one aggregate deadline. This change does not close W4/W8 or the separate
 Keychain, offline recovery, and broader confinement gates. No dependency or
 agent-facing wire field was added.
+
+## Independent HTTP driver termination and joins
+
+The built-in HTTPS transport now observes operation cancellation and response
+idle/total deadlines in the connection driver itself. An unpolled response no
+longer keeps that upstream socket alive after cancellation or expiry. Consumed
+nonempty response data refreshes inactivity but cannot extend total lifetime or
+revive an expired deadline. Body/execution abandonment signals cancellation;
+the transport retains the driver's join ownership separately from the body.
+
+`HttpsTransport::http_drivers()` exposes a cloneable trusted owner. It reaps
+completed tasks, reports unjoined work and sticky join failure, and permits a
+deadline-bounded join wait without closing admission or cancelling unrelated
+operations. Timeout, a dropped waiter, or a failed join cannot forget the other
+tasks. It covers every user of that transport instance; independent brokers
+sharing one transport still cancel only their own requests.
+
+Three real-TLS regressions hold responses without polling them, cancel or expire
+their authority, and require the peer's server task to terminate. Positive
+requests before and after, a simultaneously live independent request, and exact
+connection/request counts prevent a local error or dead fixture from masquerading
+as closure. An engine regression uses two brokers sharing a transport and real
+SQLCipher store: closing one stops only its socket, leaves the other live and
+the store unlocked, and retains the dispatched operation's uncertain outcome.
+All four failed on the preceding driver implementation, passed with this
+change, failed again with that implementation restored, and passed afterward.
+
+A test-first ownership contract additionally checks a timed-out join retains
+live work and succeeds after body drop. Its initial empty-owner stub failed the
+pending-count assertion. Two conformance tests cover cancellation/concurrency
+of join waiters and sticky driver-panic reporting without abandoning another
+task. The independent embedded consumer now retains the concrete transport's
+owner and demonstrates driver join plus real peer termination while holding a
+response. That test failed with an unbound owner, passed with the binding,
+failed again with only that binding removed, and passed after restoration.
+
+The fixture's new active-connection counter decrements only after joining an
+accepted server task; it is distinct from HTTP receipt and client-side errors.
+The public owner is not a whole-transport drain result: caller-owned connection
+establishment, retained response buffers and engine permits, native store jobs,
+and observation claims are excluded. Dropping the last owner aborts tasks but
+does not establish joins. Daemon retirement still needs to retain and integrate
+these owners alongside the remaining resource categories and aggregate deadline.
+L5/L8/L9 and W4/W8 remain open; no dependency or agent wire change was added.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0:
+333 unit tests, nineteen ordinary process tests, and the compile-fail doctest.
+All ten independent consumer tests and all six opt-in Linux confinement tests
+also pass on each compiler: 369 tests per compiler in total. Confinement runs
+were serial without competing build/test workloads. Formatting, warning-free
+Clippy, and public documentation builds pass on 1.95.0.

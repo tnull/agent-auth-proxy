@@ -1,7 +1,10 @@
 //! Verified network execution, without credential lookup or independent policy.
 
+mod driver;
+pub mod http_drivers;
 pub mod interception;
 pub mod tcp;
+use driver::Driver;
 
 use aap_types::{BoxFuture, Error, ErrorCode, Response, Result};
 use bytes::Bytes;
@@ -20,7 +23,6 @@ use std::{
 };
 use tokio::{
     net::TcpStream,
-    task::JoinHandle,
     time::{Instant, Sleep},
 };
 
@@ -152,6 +154,7 @@ pub trait Transport: Send + Sync {
 
 pub struct HttpsTransport {
     configuration: Arc<rustls::ClientConfig>,
+    drivers: http_drivers::HttpDrivers,
 }
 impl HttpsTransport {
     pub fn new(roots: impl IntoIterator<Item = CertificateDer<'static>>) -> Result<Self> {
@@ -170,7 +173,12 @@ impl HttpsTransport {
         configuration.enable_early_data = false;
         Ok(Self {
             configuration: Arc::new(configuration),
+            drivers: http_drivers::HttpDrivers::default(),
         })
+    }
+    /// Retain this owner to join HTTP drivers after cancelling their operations.
+    pub fn http_drivers(&self) -> http_drivers::HttpDrivers {
+        self.drivers.clone()
     }
 }
 impl Transport for HttpsTransport {
@@ -216,9 +224,12 @@ impl Transport for HttpsTransport {
                 result = tokio::time::timeout_at(deadline.min(Instant::now() + limits.connect_timeout), establishment) =>
                     result.map_err(|_| ErrorCode::UpstreamUnavailable)??,
             };
-            let driver = Driver(tokio::spawn(async move {
-                let _ = connection.await;
-            }));
+            let driver = Driver::start(
+                self.drivers.clone(),
+                connection,
+                cancellation.clone(),
+                deadline.min(Instant::now() + limits.idle_timeout),
+            );
             let response = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => return Err(ErrorCode::OutcomeUnknown.into()),
@@ -227,9 +238,10 @@ impl Transport for HttpsTransport {
             };
             check_headers(response.headers())?;
             let (parts, incoming) = response.into_parts();
-            let timer = Box::pin(tokio::time::sleep_until(
-                deadline.min(Instant::now() + limits.idle_timeout),
-            ));
+            let body_deadline = deadline.min(Instant::now() + limits.idle_timeout);
+            driver.refresh(body_deadline);
+            let stopped = driver.stopped.clone();
+            let timer = Box::pin(tokio::time::sleep_until(body_deadline));
             let body = ResponseBody {
                 incoming,
                 driver: Some(driver),
@@ -237,7 +249,13 @@ impl Transport for HttpsTransport {
                 deadline,
                 idle: limits.idle_timeout,
                 timer,
-                cancelled: Box::pin(async move { cancellation.cancelled().await }),
+                cancelled: Box::pin(async move {
+                    tokio::select! {
+                        biased;
+                        _ = cancellation.cancelled() => {},
+                        _ = stopped.cancelled() => {},
+                    }
+                }),
                 done: false,
             };
             Ok(http::Response::from_parts(parts, body.boxed_unsync()))
@@ -339,13 +357,6 @@ fn validate(
     Ok(())
 }
 
-struct Driver(JoinHandle<()>);
-impl Drop for Driver {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
 struct ResponseBody {
     incoming: Incoming,
     driver: Option<Driver>,
@@ -375,6 +386,7 @@ impl Body for ResponseBody {
             return Poll::Ready(None);
         }
         if this.cancelled.as_mut().poll(context).is_ready()
+            || Instant::now() >= this.timer.deadline()
             || this.timer.as_mut().poll(context).is_ready()
         {
             return this.fail(ErrorCode::OutcomeUnknown);
@@ -387,9 +399,11 @@ impl Body for ResponseBody {
                     }
                     this.remaining -= data.len();
                     if !data.is_empty() {
-                        this.timer
-                            .as_mut()
-                            .reset(this.deadline.min(Instant::now() + this.idle));
+                        let deadline = this.deadline.min(Instant::now() + this.idle);
+                        if let Some(driver) = &this.driver {
+                            driver.refresh(deadline);
+                        }
+                        this.timer.as_mut().reset(deadline);
                     }
                 }
                 if frame

@@ -80,3 +80,9 @@ of complete shutdown. Hosts must still stop their listeners, drop/drive held
 responses, and cancel/join owned work within a deadline. Native work may remain
 outstanding. See [engine ownership](../crates/aap-engine/README.md#broker-wide-authority-closure)
 and the remaining [lifecycle cases](../plan/lifecycle.md).
+
+The embedded host now retains `HttpsTransport::http_drivers()` explicitly. Its
+held-response test closes broker authority, joins the actual upstream driver
+within an absolute deadline, and observes the TLS origin connection stop before
+polling or dropping the response body. This establishes the public driver-owner
+integration, not whole-host drain or release of retained engine/body buffers.

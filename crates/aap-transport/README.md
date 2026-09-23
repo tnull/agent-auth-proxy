@@ -14,19 +14,50 @@ capture and sanitization before reaching an agent or observation consumer.
 Execution checks authority/port and framing before opening a socket, connects
 once to the supplied address, disables TLS early data, and uses finite request,
 response, header, connection, inactivity, and total-duration limits. Dropping
-the response or execution future aborts its connection driver. Once request
+the response or execution future cancels its connection driver. Cancellation
+and driver deadlines run independently of response-body polling; retaining an
+unpolled body cannot keep that upstream socket alive indefinitely. Only consumed
+nonempty body data refreshes response inactivity, never the total deadline.
+Once request
 dispatch starts, transport failure is conservatively `outcome_unknown`; neither
 that condition nor a redirect causes a second request. Consumers must poll the
 body to its terminal outcome, not mistake received headers for completion.
 
-Nine tests use real local TLS (including untrusted and mismatched certificates),
-record upstream reception, and exercise redirection, ambiguous disconnects,
-stream cancellation, deadlines, framing, body limits, and separate resolution.
+Thirteen endpoint/resolver/HTTPS tests include real local TLS with untrusted and
+mismatched certificates, record upstream reception, and exercise redirection,
+ambiguous disconnects, stream cancellation, deadlines, framing, body limits,
+and separate resolution.
+Held-response tests also check joined server connections without polling the
+client body and prove that cancelling one request leaves another live.
 The interception module additionally validates a narrow self-signed root profile
 and consumes an explicitly supplied PKCS#8 key to issue a short-lived identity
 for an already admitted CONNECT authority. Two tests cover actual scoped-trust,
 SNI/ALPN/IP handshakes and invalid, expired, non-CA, or mismatched key material.
 It owns neither store lookup nor admission.
+
+## HTTP driver ownership
+
+`HttpsTransport::http_drivers()` returns a cloneable trusted ownership handle.
+It retains established HTTP driver tasks until they have actually been joined.
+`status()` reaps completed drivers and reports pending tasks plus a sticky join
+failure flag; each new driver admission also reaps completed tasks. A failed
+join does not discard other work. Completed handles are not accumulated across
+successive requests without reaping.
+
+After stopping admission and cancelling owned operations, a host can call
+`wait_until_idle(absolute_deadline)`. A timed-out or dropped waiter does not abort
+or forget tasks. Concurrent waiters serialize joins without renewing their
+individual deadlines. Two conformance tests cover caller cancellation, concurrent
+waits, failure retention, and continued joining after a driver panic.
+
+The handle covers one transport instance, including every broker sharing it;
+waiting does not cancel another broker's requests. A zero pending count is an
+idle snapshot, not authority closure or whole-host drain. DNS/connect/handshake
+futures are caller-owned and excluded, as are retained response buffers, engine
+permits, observation, and native store jobs. Keep an ownership handle until joins
+are confirmed: dropping the last owner aborts outstanding tasks without joining
+them. The daemon's aggregate retirement/shutdown accounting still needs to
+integrate this handle; its `drain_confirmed` flag remains false.
 
 ## Admitted TCP connector
 
