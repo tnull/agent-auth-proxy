@@ -24,7 +24,8 @@ These pure contracts do not dial or grant access. Their owner must reserve
 aggregate buffers, bound retained frames, enforce deadlines and cancellation,
 and track actual accepted socket writes separately from admitted frame bytes.
 Reserve that memory before invoking a decoder. The engine now provides trusted
-native-I/O relay integration; HTTP upgrade and client support remain pending.
+native-I/O relay integration; HTTP upgrade is implemented in `aap-http`, while
+agent client support remains pending.
 
 `AgentService::open_stream` and `stream::service` separate admission from
 connection and forwarding through owned, non-cloneable handles. The engine
@@ -40,3 +41,6 @@ future. Transfer takes ownership immediately; dropping handles/futures cancels
 nonterminal work. Trusted implementations must honor wakeups, actual-prefix
 write accounting, bounded framing memory, and the no-hidden-queue/no-reentrancy
 contract. Fixed attachment errors cannot claim orderly success or approval.
+Stop-only abort handles can terminate pending/connected work without waiting
+for an I/O callback. Their termination wakeup is not a terminal result or proof
+of delivery, and they must not be called reentrantly from engine callbacks.

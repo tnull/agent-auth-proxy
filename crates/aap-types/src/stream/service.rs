@@ -2,7 +2,10 @@
 
 use super::{Cause, Opened, Terminal};
 use crate::{BoxFuture, OperationStatus, Result};
-use std::task::{Context, Poll};
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 /// Admission is separate from connection work, allowing a local adapter to
 /// finish its upgrade before starting approval, DNS, or an upstream attempt.
@@ -14,6 +17,8 @@ pub enum Admission {
 /// Owns the sole attachment. Dropping it or its connection future cancels work;
 /// neither can be cloned, resumed, or replayed by an operation-ID lookup.
 pub trait PendingStream: Send {
+    /// Stop this attachment independently of a blocked connection future.
+    fn abort_handle(&self) -> Arc<dyn StreamAbort>;
     /// A returned error means the adapter could not obtain a complete result.
     /// It must not invent an engine terminal outcome or reconnect automatically.
     fn connect(self: Box<Self>) -> BoxFuture<'static, Result<Connection>>;
@@ -26,6 +31,7 @@ pub enum Connection {
 
 /// Session-authorized connection ownership, never a raw upstream socket.
 pub trait ConnectedStream: Send {
+    fn abort_handle(&self) -> Arc<dyn StreamAbort>;
     /// Current safe opening metadata, with the original remaining lifetime.
     fn opened(&self) -> Result<Opened>;
 
@@ -38,6 +44,18 @@ pub trait ConnectedStream: Send {
         self: Box<Self>,
         attachment: Box<dyn ApplicationIo>,
     ) -> BoxFuture<'static, Result<Terminal>>;
+}
+
+/// A stop-only capability for the already admitted operation. It grants no
+/// new attachment, destination, credentials, approval, or success authority.
+/// Call outside ApplicationIo callbacks; engine callbacks may hold an operation
+/// lock. A remote implementation may only close its local attachment, in which
+/// case missing terminal delivery still remains an error, not an invented result.
+pub trait StreamAbort: Send + Sync {
+    fn abort(&self, reason: AttachmentError);
+    /// Wake an adapter blocked on control delivery when this operation ends.
+    /// This signal is not a terminal result or evidence of successful delivery.
+    fn terminated(&self) -> BoxFuture<'_, ()>;
 }
 
 /// Trusted, bounded application I/O supplied by a session adapter or embedder.

@@ -2,6 +2,7 @@ use super::*;
 use crate::tcp::{ConnectionApproval, PendingTcp, TcpAdmission};
 use aap_policy::{TcpLimits, TcpProfile};
 use aap_types::stream::{self, Cause};
+mod framed;
 mod relay;
 mod service;
 

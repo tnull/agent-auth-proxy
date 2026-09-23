@@ -1,5 +1,6 @@
 use super::*;
 use aap_types::stream::service::{Admission, ApplicationIo, AttachmentError, Connection};
+use std::future::poll_fn;
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -36,6 +37,90 @@ impl ApplicationIo for Attachment {
         Pin::new(&mut self.0)
             .poll_shutdown(cx)
             .map_err(|_| AttachmentError::AttachmentLost)
+    }
+}
+
+#[tokio::test]
+async fn tcp_service_abort_interrupts_unpolled_work_without_rewriting_terminal() {
+    for connected_phase in [false, true] {
+        let fixture = Fixture::new().await;
+        let tcp = TcpFixture::new().await;
+        let connector = Arc::new(MemoryConnector {
+            peers: Mutex::new(vec![]),
+            calls: AtomicUsize::new(0),
+        });
+        let mut config = tcp.configuration(&fixture);
+        config.tcp_connector = connector.clone();
+        let broker = Broker::new(config).unwrap();
+        let session = broker.create_session(tcp_options()).unwrap();
+        let request = open();
+        let Admission::New(pending) = session.open_stream(request.clone()).await.unwrap() else {
+            panic!()
+        };
+        let abort = pending.abort_handle();
+        let terminal = if connected_phase {
+            let Connection::Opened(connected) = pending.connect().await.unwrap() else {
+                panic!()
+            };
+            let connected_abort = connected.abort_handle();
+            let (mut client, local) = tokio::io::duplex(64);
+            client.write_all(b"abc").await.unwrap();
+            let mut relay = connected.relay(Box::new(Attachment(local)));
+            poll_fn(|cx| {
+                assert!(relay.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+            connected_abort.abort(AttachmentError::InvalidFrame);
+            assert_eq!(session.core.active.available_permits(), 8);
+            relay.await.unwrap()
+        } else {
+            let mut connection = pending.connect();
+            abort.abort(AttachmentError::InvalidFrame);
+            assert_eq!(
+                session
+                    .request_status(request.request_id.clone())
+                    .await
+                    .unwrap()
+                    .state,
+                OperationState::Failed,
+                "stop-only handle did not terminate pending work"
+            );
+            let value = poll_fn(|cx| {
+                let result = connection.as_mut().poll(cx);
+                assert!(
+                    result.is_ready(),
+                    "aborted pending operation started connection work"
+                );
+                result
+            })
+            .await
+            .unwrap();
+            let Connection::Terminal(terminal) = value else {
+                panic!()
+            };
+            terminal
+        };
+        assert_eq!(terminal.cause, Cause::InvalidFrame);
+        assert_eq!(terminal.sent_bytes, if connected_phase { 1 } else { 0 });
+        assert_eq!(
+            terminal.operation.state,
+            if connected_phase {
+                OperationState::OutcomeUnknown
+            } else {
+                OperationState::Failed
+            }
+        );
+        abort.abort(AttachmentError::LimitExceeded);
+        let retained = session.request_status(request.request_id).await.unwrap();
+        assert_eq!(retained.state, terminal.operation.state);
+        assert_eq!(retained.request_id, terminal.operation.request_id);
+        assert_eq!(retained.status, terminal.operation.status);
+        assert_eq!(fixture.resolutions.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            connector.calls.load(Ordering::SeqCst),
+            usize::from(connected_phase)
+        );
     }
 }
 

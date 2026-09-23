@@ -28,8 +28,9 @@ now correlates sanitized agent/upstream views, ordered content, and logical
 request endings. Collectors have operator-enrolled private session/content
 subscriptions with isolated cursors and acknowledgments. Complete remote MCP, TCP,
 complete connection coverage, and confinement demonstrations remain pending.
-The trusted engine now forwards bounded TCP application streams with safe
-observation and owned cancellation; its agent-facing framed endpoint is pending.
+The [TCP endpoint](docs/tcp.md) now supports enrolled, bounded binary streams
+through the daemon with safe observation, explicit half-close, and retained
+terminal status. The agent client and confinement demonstration remain pending.
 The trusted [remote MCP component](crates/aap-mcp-upstream/README.md)
 now validates enrolled tools and sanitized JSON/SSE messages and manages private
 upstream contexts. Real HTTPS initialization/list/call, admitted control replies,

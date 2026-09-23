@@ -7,7 +7,9 @@ use hyper::{body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{os::unix::net::UnixListener, sync::Arc, time::Duration};
 
+mod ingress;
 pub mod proxy;
+pub mod stream;
 
 /// A host-bound local router. Different authority planes need different listeners
 /// and handler instances; caller headers never select a handler.
@@ -76,6 +78,7 @@ async fn serve_bound(
     let listener =
         tokio::net::UnixListener::from_std(listener).map_err(|_| ErrorCode::InternalError)?;
     let mut connections = tokio::task::JoinSet::new();
+    let work = Arc::new(tokio::sync::Semaphore::new(28));
     loop {
         tokio::select! {
             biased;
@@ -85,23 +88,9 @@ async fn serve_bound(
                 let (stream, _) = accepted.map_err(|_| ErrorCode::InternalError)?;
                 if !stream.peer_cred().is_ok_and(|credentials| credentials.uid() == expected_uid) { continue; }
                 let router = router.clone(); let cancelled = shutdown.clone();
+                let work = work.clone();
                 connections.spawn(async move {
-                    let connection = async move {
-                        let pending = Arc::new(std::sync::Mutex::new(None));
-                        let handoff = pending.clone();
-                        let service = service_fn(move |request| { let router = router.clone(); let pending = pending.clone(); async move {
-                            let response = match router {
-                                Router::Local(handler) => handler.handle(request).await,
-                                Router::Session(session, Some(identities)) if request.method() == http::Method::CONNECT => proxy::admit(request,session,identities,pending).await.unwrap_or_else(error_response),
-                                Router::Session(session, _) => SessionHandler(session).handle(request).await,
-                            };
-                            Ok::<_, std::convert::Infallible>(response)
-                        }});
-                        let _ = http1_builder().serve_connection(TokioIo::new(stream), service).with_upgrades().await;
-                        let upgrade = handoff.lock().ok().and_then(|mut pending| pending.take());
-                        if let Some(upgrade) = upgrade { let _ = proxy::serve_tunnel(upgrade).await; }
-                    };
-                    tokio::select! { _ = cancelled.cancelled() => {}, _ = tokio::time::timeout(Duration::from_secs(610), connection) => {} }
+                    tokio::select! { _ = cancelled.cancelled() => {}, _ = ingress::serve(stream, router, work) => {} }
                 });
             },
         }
@@ -229,14 +218,24 @@ pub fn validate_local_request<B>(request: &http::Request<B>) -> Result<()> {
 }
 
 pub async fn read_body(request: http::Request<Incoming>) -> Result<Bytes> {
-    let collected = tokio::time::timeout(
-        Duration::from_secs(10),
+    let deadline = request
+        .extensions()
+        .get::<ingress::RequestDeadline>()
+        .map_or_else(
+            || tokio::time::Instant::now() + Duration::from_secs(10),
+            |value| value.0,
+        );
+    if tokio::time::Instant::now() >= deadline {
+        return Err(ErrorCode::RequestInvalid.into());
+    }
+    let collected = tokio::time::timeout_at(
+        deadline,
         Limited::new(request.into_body(), 2 * 1024 * 1024).collect(),
     )
     .await
     .map_err(|_| ErrorCode::RequestInvalid)?
     .map_err(|_| ErrorCode::LimitExceeded)?;
-    if collected.trailers().is_some() {
+    if tokio::time::Instant::now() >= deadline || collected.trailers().is_some() {
         return Err(ErrorCode::RequestInvalid.into());
     }
     Ok(collected.to_bytes())

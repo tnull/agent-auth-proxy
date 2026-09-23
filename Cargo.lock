@@ -84,6 +84,7 @@ version = "0.1.0"
 dependencies = [
  "aap-auth",
  "aap-config",
+ "aap-http",
  "aap-mcp-upstream",
  "aap-observe",
  "aap-policy",
@@ -114,6 +115,7 @@ dependencies = [
  "bytes",
  "http",
  "http-body-util",
+ "httparse",
  "hyper",
  "hyper-util",
  "rustix",

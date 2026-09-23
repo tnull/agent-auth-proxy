@@ -113,8 +113,9 @@ which can be smaller after a partial write or cancellation.
 Only two orderly ends and an accepted required terminal batch permit completed
 status. Cancellation/drop/timeouts attempt incomplete endings and preserve
 actual write counts. Required recording outages stop new forwarding; best-effort
-loss follows the existing gap contract. These native-I/O tests do not establish
-the still-pending local framed endpoint or daemon TCP support.
+loss follows the existing gap contract. The [local framed endpoint](tcp.md) now
+uses the same engine gate, with a real daemon TCP fixture. Broader concurrency,
+physical connection coverage, and confinement acceptance remain pending.
 
 ## Scoped collectors
 
@@ -159,6 +160,6 @@ not the complete runtime directory. No collector gains policy-write, session
 creation, approval, or credential-store authority.
 
 Still pending: physical TCP/TLS connection lifecycle and tunnel/subrequest correlation;
-remote MCP and daemon TCP coverage; parsed message convenience events; and expanded
+remote MCP protocol coverage; parsed message convenience events; and expanded
 auth state events. These limitations prevent claiming complete communication
 observation or checking off W7.

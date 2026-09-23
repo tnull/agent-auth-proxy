@@ -1,8 +1,9 @@
 # Local TCP stream binding, version 1
 
 Status: W7 wire contract. Pure DTO/framing validation, trusted engine relay,
-and the runtime-neutral service seam are implemented. Session upgrade and
-agent client integration remain pending. This binds
+the runtime-neutral service seam, and the daemon session upgrade are implemented.
+Agent client integration and full acceptance remain pending; see
+[current server coverage](../docs/tcp.md). This binds
 [`stream.open`](tcp.md) to the existing session attachment. It changes neither
 upstream authentication nor the credential-store interface. Project names and
 the provisional protocol token can be renamed together before release.
@@ -246,7 +247,9 @@ Keep credential-free frame/DTO validation and logical stream outcomes in
 `aap-types`, the Upgrade adapter in `aap-http`, and its agent-safe client in
 `aap-client`. The engine owns policy, approval, operation identity, cancellation,
 and observation admission; `aap-transport` owns admitted dialing and duplex I/O.
-No new crate or protocol dependency is needed for this binding.
+No new crate or external package is needed for this binding. The HTTP adapter
+uses the existing `httparse` dependency directly to validate singleton headers
+before Hyper normalization; ordinary HTTP still uses Hyper.
 
 Embedded callers use bounded application read/write/end callbacks without
 serializing HTTP locally. The implemented `stream::service` seam separates
@@ -275,6 +278,7 @@ checks](tcp.md#crate-ownership-and-acceptance), plus:
 - Actual daemon sockets and confined-agent fixtures, plus the same lifecycle
   for a trusted embedded consumer. Parser-only tests do not prove confinement.
 
-Use the existing dependency stack and synthetic fixtures. This contract defines
-the next implementation target; it does not certify the current listener,
-client, or runtime as supporting the new endpoint or reserved control capacity.
+Use the existing dependency stack and synthetic fixtures. The current listener
+supports the endpoint and reserved work/control capacity, but this contract
+does not certify the pending client, complete adversarial acceptance, or the
+external confinement boundary.

@@ -27,6 +27,7 @@ aap-test-support.workspace = true
 aap-providers.workspace = true
 aap-store-sqlite.workspace = true
 aap-config.workspace = true
+aap-http.workspace = true
 
 [lints]
 workspace = true

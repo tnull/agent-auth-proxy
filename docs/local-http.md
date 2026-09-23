@@ -9,7 +9,10 @@ Every local call is HTTP/1.1 POST with `Content-Type: application/json`, no
 query, and an origin-form target. DTOs are in `aap-types::protocol`; strict JSON
 decoding rejects unknown and duplicate fields. Request framing is bounded to
 2 MiB, 64 headers/64 KiB, and a ten-second header/body read deadline. Each
-listener has at most 32 active connections; connections are not kept alive.
+session listener has at most 32 active connections, at most 28 of them work,
+with four reserved for bounded classification and status/cancel. Ordinary
+HTTP connections are not kept alive. TCP upgrade has the narrower metadata
+limits and distinct phase timers described in [tcp.md](tcp.md).
 
 | Path | JSON request | Result |
 | --- | --- | --- |
@@ -21,6 +24,7 @@ listener has at most 32 active connections; connections are not kept alive.
 | `/aap/v1/vault/auth_status` | `AuthContext` | `AuthStatus` |
 | `/aap/v1/vault/logout` | `AuthContext` | `Logout` |
 | `/aap/v1/connect/admit` | `{"authority":"…"}` | JSON null after admission |
+| `/aap/v1/stream/open` | `{"request_id":"…","resource":"…"}` plus required Upgrade headers | Existing status or one framed TCP attachment |
 
 Exposure of a method does not imply the engine supports every profile. The
 broker implements API-key execution, the controlled website profile, and the
@@ -39,11 +43,13 @@ still-valid fake credentials, pending issuance reports `auth_in_progress`, and
 revoked/expired or failed issuance cannot create a replacement binding. Its
 operation status is available through the same status endpoint.
 
-The client performs no automatic retry or redirect. Its connection deadline is
+The existing HTTP client performs no automatic retry or redirect. Its connection deadline is
 ten seconds; a call/stream is bounded to 630 seconds and 32 MiB, with 65-second
 stream inactivity. A broken connection after sending is conservatively uncertain.
 Use explicit status/cancel calls; disconnect alone is not proof of remote rollback.
 Server shutdown cancels listener work and drops in-flight execution futures.
+The TCP endpoint is implemented server-side; its agent client support remains
+pending and must not reuse these ordinary HTTP client timeout assumptions.
 
 The [daemon/operator composition](daemon.md) uses distinct private listeners.
 Provider-compatible path mounts remain separate work. Inspected HTTPS CONNECT

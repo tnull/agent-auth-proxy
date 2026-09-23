@@ -58,9 +58,10 @@ The [TCP relay contract](tcp.md) narrows the byte-stream fixture to an explicitl
 enrolled credential-free service. Its duplex/half-close, shared capacity,
 approval, and observation acceptance checks are W7 gates. An arbitrary raw
 channel does not prove plaintext inspection or per-action authorization.
-The proposed [local wire binding](tcp-binding.md) adds strict HTTP upgrade and
-binary-frame fixtures, explicit terminal delivery, and reserved control capacity;
-it is not an implemented endpoint until the daemon/client checks pass.
+The [local wire binding](tcp-binding.md) adds strict HTTP upgrade and binary-frame
+fixtures, explicit terminal delivery, and reserved control capacity. Its daemon
+endpoint now exists; the client and full acceptance remain separate gates.
+See [current coverage](../docs/tcp.md), not this proposed scope, for evidence.
 
 ## Initial finite limits
 

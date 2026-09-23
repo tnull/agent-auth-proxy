@@ -1074,3 +1074,53 @@ Cargo features changed. HTTP upgrade, its framed application adapter, actual
 client/daemon TCP support, reserved status/cancel capacity, and confinement
 remain separate incomplete gates. Other AgentService adapters still explicitly
 reject stream opening by default rather than falsely claiming wire support.
+
+## Daemon TCP upgrade and reserved control capacity
+
+The session listener now implements strict HTTP Upgrade for an enrolled TCP
+resource, followed by bounded binary framing. It validates raw singleton
+headers before normalization, forbids pre-OPENED payload, writes OPENED before
+application forwarding, and preserves both explicit half-close orders. Shared
+engine admission, approval, destination checks, observation, and single-attempt
+connection remain authoritative. Operator and inspected CONNECT routes do not
+expose this endpoint. The credential-free client integration is still pending.
+
+The framed adapter reports actual accepted payload prefixes, handles split and
+coalesced frames, and monitors forbidden input after the agent's directional
+end. A partially written output frame cannot be replaced by terminal control.
+Final delivery has a two-second ceiling; losing it never rewrites the committed
+engine result. Payload is released with the engine reservation, without waiting
+for final control delivery. Stop-only service handles interrupt blocked OPENED
+writes without acquiring new authority or inventing a terminal outcome.
+
+Session listeners reserve four of 32 local connection slots for bounded
+classification and status/cancel service. HTTP work, CONNECT, and TCP attachments
+share at most 28 work permits. Complete incoming session metadata has one
+ten-second deadline. TCP approval, preparation, and connected lifetimes retain
+their separate bounds instead of inheriting the ordinary HTTP response timer.
+Explicit expiry checks reject already-ready metadata after its deadline, for
+both TCP opening and ordinary HTTP body collection.
+
+Seventeen added unit tests cover framing, exact write counts, early/after-end
+input, loss during approval, fixed limits, payload release, blocked-control
+cancellation, final-delivery timeout, metadata expiry, and exhausted work slots
+with responsive controls. Initial parser/framing/integration tests failed against
+compiling stubs. Further failing assertions exposed expired ready metadata,
+control-slot exhaustion, and cancellation blocked behind OPENED delivery before
+their fixes. Supplemental already-passing draft checks are conformance evidence,
+not regression-discovery claims.
+
+The additional daemon process test uses the real session socket, TCP fixture,
+and owner observation endpoint. It verifies binary forwarding without local
+framing at the peer, explicit send-end, completed terminal/status, paired final
+observations, no duplicate connection, malformed headers, and operator-route
+separation. Engine TCP fixtures continue to observe zero secret-store calls.
+
+All 263 unit tests, eighteen process tests, and the compile-fail doctest pass on
+Rust 1.95.0 and 1.88.0. All-target checks pass on both; stable formatting,
+warning-free Clippy, and warning-free documentation pass. The HTTP adapter uses
+the already-transitive `httparse` package directly and scoped Tokio features;
+no external package was added. Client delivery, broader adversarial/shared-limit
+acceptance, reuse examples, and actual confinement still prevent a complete W7
+or proof-of-concept claim. See [the implemented endpoint](tcp.md) for its exact
+current scope.

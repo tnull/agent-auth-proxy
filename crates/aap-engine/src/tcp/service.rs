@@ -1,6 +1,6 @@
 use super::*;
 use aap_types::stream::service::{
-    ApplicationIo, AttachmentError, ConnectedStream, Connection, PendingStream,
+    ApplicationIo, AttachmentError, ConnectedStream, Connection, PendingStream, StreamAbort,
 };
 use std::{
     pin::Pin,
@@ -9,6 +9,9 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 impl PendingStream for PendingTcp {
+    fn abort_handle(&self) -> Arc<dyn StreamAbort> {
+        Arc::new(Abort(self.operation.clone()))
+    }
     fn connect(self: Box<Self>) -> BoxFuture<'static, Result<Connection>> {
         Box::pin(async move {
             Ok(match PendingTcp::connect(*self).await {
@@ -19,6 +22,9 @@ impl PendingStream for PendingTcp {
     }
 }
 impl ConnectedStream for ConnectedTcp {
+    fn abort_handle(&self) -> Arc<dyn StreamAbort> {
+        Arc::new(Abort(self.operation.clone()))
+    }
     fn opened(&self) -> Result<stream::Opened> {
         ConnectedTcp::opened(self)
     }
@@ -29,6 +35,16 @@ impl ConnectedStream for ConnectedTcp {
         // Ownership transfer must not be deferred until the boxed future polls.
         let relay = ConnectedTcp::relay(*self, Box::new(Attachment(attachment)));
         Box::pin(async move { Ok(relay.await) })
+    }
+}
+
+struct Abort(Arc<Operation>);
+impl StreamAbort for Abort {
+    fn abort(&self, reason: AttachmentError) {
+        self.0.finish(reason.cause());
+    }
+    fn terminated(&self) -> BoxFuture<'_, ()> {
+        Box::pin(self.0.cancelled.cancelled())
     }
 }
 

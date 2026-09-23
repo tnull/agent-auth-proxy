@@ -42,7 +42,7 @@ MCP, not the unlock-key channel. See [the bridge contract](mcp.md).
 | `interception` | Optional public CA certificate and private store reference; see [CONNECT](connect.md) |
 | `static_hosts` | Optional exact canonical hostname to IP list; all addresses still require profile admission |
 | `profiles` | Validated resource profiles and exact permitted routes |
-| `tcp_profiles` | Optional separate credential-free TCP enrollments; defaults to empty, with raw/inspected endpoint and alias overlap rejected; stream execution is not yet implemented |
+| `tcp_profiles` | Optional separate credential-free TCP enrollments; defaults to empty, with raw/inspected endpoint and alias overlap rejected; exposed through the [stream endpoint](tcp.md) |
 | `require_approval` | Default false; true fails closed because no production approval adapter is configured |
 | `observation` | `acceptance: "local_memory"`, finite `max_events`, `max_bytes`, and optional `required` |
 
@@ -132,7 +132,9 @@ drops only that consumer's update where global/session capacity permits the
 other queues to accept it. Global overflow can still produce broader gaps.
 
 Per-listener admission is 32 connections, with finite parsing/body/stream
-deadlines. The broker permits at most 64 sessions and 8 active upstream operations
+deadlines. Session listeners admit at most 28 work connections, reserving four
+for bounded classification and status/cancel across HTTP, CONNECT, and TCP.
+The broker permits at most 64 sessions and 8 active upstream operations
 per session, with separate operation/approval budgets. Expired sessions deny new
 work immediately; create/status removes their idle listener entries. These are
 finite first-PoC ceilings, not production resource-sizing guarantees.
@@ -194,3 +196,9 @@ follow-up is sent, and its separately submitted GET has no credential body.
 Two collector process tests cover distinct session/content grants, immutable
 scope, cross-cursor rejection, acknowledgments, expiry, revocation, valid and
 invalid reload, and denial before upstream dispatch on required queue overflow.
+
+The TCP process fixture uses a separate enrolled local peer and raw session
+upgrade. It verifies binary-only upstream delivery, explicit half-close,
+terminal/status agreement, duplicate-open no-reconnect behavior, malformed
+header refusal, and operator-route separation. The agent TCP client and actual
+confinement tests remain pending; see [tcp.md](tcp.md).
