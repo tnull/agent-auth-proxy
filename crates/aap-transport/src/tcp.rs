@@ -1,5 +1,7 @@
 //! One admitted raw TCP connection. No DNS, authentication, retry, or framing.
 
+pub mod relay;
+
 use crate::Cancellation;
 use aap_types::{BoxFuture, ErrorCode, Result};
 use std::{

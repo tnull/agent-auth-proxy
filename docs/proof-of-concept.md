@@ -959,3 +959,38 @@ no runtime dependency was added. This foundation does not yet forward TCP
 application bytes or expose an agent endpoint: duplex/half-close, payload
 observation, local upgrade, client/service binding, and actual confinement
 remain open W7 gates, alongside the other recorded proof requirements.
+
+## Bounded TCP duplex primitive
+
+`aap-transport::tcp::relay` now owns bounded bidirectional application I/O with
+one 32 KiB-or-smaller buffer per direction, independent byte ceilings, exact
+accepted-prefix write counters, and both half-close orders. It alternates work
+and performs at most sixteen I/O steps per poll. There is no spawned driver,
+unbounded queue, disk spool, retry, or credential lookup. The caller must reserve
+aggregate capacity and supply a trusted admission gate before forwarding each
+chunk/end; the primitive does not implement payload sanitization or export.
+
+Absolute lifetime and inherited idle deadlines cannot restart at handoff.
+Successful writes alone refresh inactivity; opposite-direction progress does
+not extend a stalled write. Both cancellation and timeout wake a blocked driver.
+Explicit owner termination closes I/O and releases buffers without polling or
+flushing, while retaining actual partial-write counts and any committed outcome.
+Calling termination cannot manufacture an orderly end without the two-ended
+relay path. Engine terminal recording and lifecycle commitment remain separate.
+
+Eleven tests cover real binary TCP exchanges, both half-close orders, replies
+after send-end, admission failure/cancellation before writes, partial delivery,
+exact and exceeded directional limits, end-recording failure, idle/lifetime and
+stalled-write deadlines, blocked-driver wakeups, bounded continuously ready I/O,
+and immediate owner termination. Eight tests were observed failing against
+their initial compiling stubs and now pass; three additional tests exercise
+existing draft behavior rather than claiming new regression discovery.
+
+All 228 unit tests, seventeen daemon process tests, and the compile-fail doctest
+pass on Rust 1.95.0 and 1.88.0, with all-target checks on both. Stable formatting,
+warning-free Clippy, and warning-free workspace documentation pass. No dependency
+or Cargo feature was added for this primitive. Engine payload observation and
+terminal integration, explicit framed send-end/attachment-loss handling, local
+upgrade/client APIs, and the actual daemon/sandbox demonstration remain pending.
+Raw application EOF in these native fixtures does not prove that an agent-wire
+EOF is accepted as an orderly end; the future framed adapter must reject it.

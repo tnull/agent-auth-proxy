@@ -48,3 +48,38 @@ buffers/deadlines, observation, framing, and terminal write counters. Four tests
 cover strict endpoints, real binary traffic with both half-close orders, and
 deterministic attempt cancellation/expiry/failure/drop. They do not yet establish
 an operational agent TCP relay; engine and local adapter integration is pending.
+
+## Bounded duplex I/O
+
+`tcp::relay::Duplex` now supplies an owned, explicitly polled application-byte
+relay. It uses at most 32 KiB per direction, alternates directional work, and
+limits each poll to sixteen I/O steps. It spawns no driver or queue. The engine
+must reserve aggregate capacity before construction and terminate retained work
+when its authority ends; a cancellation token alone requires the owner to poll.
+Explicit `terminate` immediately closes I/O, releases buffers, and preserves
+actual accepted-prefix counters and an already terminal result.
+
+A mandatory trusted gate admits each chunk and directional end before output.
+It must implement safe required-observation acceptance, not export raw payload.
+The relay itself owns no recorder, sanitizer, credentials, or grants. Partial
+writes count only their accepted prefixes. Each direction preserves half-close;
+both ends are needed for an orderly transport outcome. That outcome still
+requires final engine observation and lifecycle commitment before the broker
+can report completion.
+
+Independent byte limits, inherited absolute lifetime/idle deadlines, and a
+directional stalled-write deadline bound every I/O stage. Only successful
+application writes refresh inactivity; opposite-direction activity cannot
+extend a stalled writer. Cancellation or gate failure stops forwarding and
+does not flush remaining payload. Low-level I/O errors become fixed causes,
+not peer-provided diagnostics. A one-byte EOF probe at a byte ceiling is never
+forwarded if it contains excess data.
+
+Eleven tests include real binary TCP traffic and both half-close orders,
+required-gate rejection, cancellation before writes, partial-write accounting,
+exact/exceeded directional limits, real driver wakeups, idle/lifetime/stall
+deadlines, bounded ready-peer polling, and unpolled owner termination. This is
+not yet wired into the engine's application path or local protocol. A framed
+adapter must map explicit SEND_END to application EOF, unexpected attachment
+EOF to failure, and maintain separate bounded final-control delivery; these
+native-stream fixtures do not establish those agent-wire semantics.
