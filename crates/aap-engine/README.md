@@ -83,6 +83,13 @@ old jar. Remote MCP session/readiness transitions and local protocol completions
 use the same ordered boundary. Closing after completion invalidates context
 authority without rewriting already completed work.
 
+Held website and remote MCP bodies revalidate backing-store access/version
+before first body delivery and again before completion. Website failure revokes
+the context and discards provisional cookie/CSRF state without resolving another
+password or repeating a request. These are bounded asynchronous store checks
+outside the completion lock; they do not exclude native changes after the last
+check or claim that an external backend participates in a local transaction.
+
 This is not an aggregate drain result or a proof of all private-state races.
 Placeholder issuance, generation reload, backend change detection, and the full
 daemon/embedded lifecycle acceptance matrix remain separate gates. Retained

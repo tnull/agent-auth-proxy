@@ -4,6 +4,8 @@ use aap_types::profile::LoginEncoding;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+mod custody;
+
 #[tokio::test]
 async fn website_completion_respects_required_and_best_effort_recording() {
     for required in [true, false] {

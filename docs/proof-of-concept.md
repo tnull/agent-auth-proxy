@@ -1674,3 +1674,29 @@ still need their own evidence. Unpolled bodies may retain exchange-owned private
 buffers until driven/dropped; this change does not establish immediate erasure,
 socket/task drain, or the aggregate shutdown deadline. Operational recovery,
 native Keychain delivery, and all remaining proof gates are still required.
+
+## Held website response custody
+
+Website response bodies now revalidate their pinned credential/store lease
+before first body delivery and again before committing completion, as remote
+MCP already does. Holding a fully inspected response cannot bypass a store lock,
+credential rotation, or deletion that happens before either check. Failure
+invalidates the context and drops provisional cookie/CSRF authority, retains
+uncertain dispatched status and incomplete endings, and never resubmits login.
+The checks use metadata/access revalidation, not another password resolution.
+
+Two regressions use real SQLCipher mutations and form/JSON origins, separately
+changing custody before delivery and after the first frame but before EOF.
+No-change controls complete login and reach the protected resource; negative
+cases retain exactly two origin receipts and one password resolution. Both
+tests failed on pre-fix code, passed with the correction, and failed again with
+only the production correction removed before restoration.
+
+All-target checks and the full workspace pass on Rust 1.95.0 and 1.88.0:
+312 unit tests, nineteen ordinary daemon process tests, and the compile-fail
+doctest. Formatting, warning-free Clippy, and public docs pass on 1.95.0.
+Independent consumers and opt-in confinement were not rerun for this correction.
+
+The correction does not make store revalidation atomic with external native
+edits or interrupt native work. The separate publication, reload, shutdown,
+Keychain, and recovery gates remain open.

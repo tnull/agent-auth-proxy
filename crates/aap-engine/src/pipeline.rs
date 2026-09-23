@@ -76,14 +76,8 @@ impl Session {
         };
         match prepared {
             Ok(response) => {
-                let delivery_check = guard
-                    .remote
-                    .as_ref()
-                    .map(|exchange| exchange.completion_check());
-                let completion_check = guard
-                    .remote
-                    .as_ref()
-                    .map(|exchange| exchange.completion_check());
+                let delivery_check = guard.custody_check();
+                let completion_check = guard.custody_check();
                 let cancellation = {
                     let operation = operation.clone();
                     let session = self.clone();
@@ -447,6 +441,19 @@ pub(super) struct Guard {
     pub response_recorded: bool,
 }
 impl Guard {
+    fn custody_check(&self) -> Option<BoxFuture<'static, Result<()>>> {
+        if let Some(exchange) = &self.website {
+            let binding = exchange.binding.clone();
+            let session = self.session.clone();
+            Some(Box::pin(async move {
+                session.revalidate_binding(&binding).await
+            }))
+        } else {
+            self.remote
+                .as_ref()
+                .map(|exchange| exchange.completion_check())
+        }
+    }
     pub fn begin_dispatch(&mut self) -> Result<()> {
         #[cfg(test)]
         self.session
