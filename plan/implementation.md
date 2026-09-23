@@ -253,6 +253,13 @@ Keep byte relay separate from inspected CONNECT, with no credential lookup or
 raw fallback after inspection failure. Opening a stream approves a bounded
 connection, not its individual future application actions.
 
+The next client integration follows the [TCP client delivery plan](tcp-client.md).
+Exercise strict opening responses, owned pending/connected handles, bounded
+duplex delivery, and phase-specific deadlines before the real daemon fixture.
+Distinguish retained daemon outcome from successful local payload delivery;
+neither EOF nor a later status lookup can reconstruct a lost stream. Keep the
+agent client free of engine/store dependencies and verify no automatic replay.
+
 HTTP/2 needs independent stream identity and origin checks; WebSocket needs
 explicit frame/operation policy. These two later coverage profiles are not
 required to claim the narrower [first proof](proof-of-concept.md), whereas its

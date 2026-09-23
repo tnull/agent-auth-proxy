@@ -116,6 +116,12 @@ enough for a wall-clock sleep.
 | Remote MCP and TCP | Each admitted profile passes its own lifecycle, custody, cancellation, framing, and no-replay contract through both integration paths |
 
 Only compare operations within each adapter's declared capabilities and limits.
+For TCP, apply the [client lifecycle contract](tcp-client.md): the remote
+daemon may begin connecting immediately after its HTTP upgrade, whereas an
+embedded pending handle starts that work when driven. Both must preserve one
+attachment, cancellation, deadlines, and no replay. Compare the daemon's final
+operation outcome separately from successful local application delivery.
+
 For example, the MCP tool's bounded result envelope need not support every
 stream size available to the direct client. Test those narrower limits as
 explicit errors; do not buffer unbounded data or silently reduce the common

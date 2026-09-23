@@ -23,6 +23,7 @@ the complete proxy and its security guarantees are not yet verified. See the
 | [Remote MCP](remote-mcp.md) | Upstream session custody, pinned tool policy, bounded JSON/SSE mediation, and no automatic replay |
 | [TCP relay](tcp.md) | Explicit destination grants, duplex lifecycle, connection approval, bounded byte observation, and coverage limits |
 | [Local TCP binding](tcp-binding.md) | Session-socket upgrade, binary frames, half-close, terminal outcomes, and control-capacity requirements |
+| [TCP client delivery](tcp-client.md) | Credential-free client ownership, strict responses, local versus daemon outcomes, and ordered integration checks |
 | [Secret stores](secret-stores.md) | Pluggable interface, encrypted SQLite, direct macOS Keychain storage and existing-item reuse |
 | [Catalog](catalog.md) | Versioned private JSON format, item policy, enrollment, safe updates, and reload |
 | [Operator lifecycle](operations.md) | Enrollment, management authority, invalidation, offline maintenance, backup/restore, and recovery gates |
